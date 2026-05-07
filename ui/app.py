@@ -111,6 +111,15 @@ with st.sidebar:
             except httpx.HTTPError as exc:
                 st.error(f"API error: {exc}")
 
+    if st.button("Refresh Inbox", use_container_width=True):
+        with st.spinner("Fetching..."):
+            try:
+                result = api_post("/emails/refresh")
+                st.success(f"Loaded {result['count']} email(s).")
+                st.rerun()
+            except httpx.HTTPError as exc:
+                st.error(f"API error: {exc}")
+
     st.divider()
 
     filter_priority = st.multiselect(

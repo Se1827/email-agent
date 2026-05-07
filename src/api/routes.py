@@ -8,7 +8,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from src.config import get_settings
-from src.connectors.mock import load_emails
+from src.connectors.mock import load_emails as load_mock_emails
+from src.connectors.imap import fetch_emails as fetch_imap_emails
 from src.models.email import CalendarEvent, Classification, DraftReply, Email
 from src.services import classifier, drafter
 from src.services.calendar import get_upcoming_events, load_events
@@ -23,11 +24,37 @@ _emails: dict[str, Email] = {}
 _calendar: list[CalendarEvent] = []
 
 
+def _load_email_source() -> list[Email]:
+    """Load emails from the configured source (mock JSON or IMAP)."""
+    cfg = get_settings()
+    if cfg.email_source == "imap":
+        return fetch_imap_emails(
+            host=cfg.imap_host,
+            port=cfg.imap_port,
+            username=cfg.imap_user,
+            password=cfg.imap_pass,
+            mailbox=cfg.imap_mailbox,
+            limit=cfg.imap_fetch_limit,
+            use_ssl=cfg.imap_use_ssl,
+        )
+    return load_mock_emails(cfg.data_dir / "seed_emails.json")
+
+
 def _ensure_loaded() -> None:
     """Populate the in-memory stores on first access."""
     if not _emails:
-        for email in load_emails(get_settings().data_dir / "seed_emails.json"):
-            _emails[email.id] = email
+        try:
+            for email in _load_email_source():
+                _emails[email.id] = email
+        except Exception as exc:
+            log.error("email_load_failed", extra={"error": str(exc)})
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"Failed to load emails: {exc}. "
+                    "Check your EMAIL_SOURCE and IMAP settings in .env."
+                ),
+            )
     if not _calendar:
         _calendar.extend(load_events(get_settings().data_dir / "calendar.json"))
 
@@ -125,3 +152,15 @@ async def get_calendar() -> list[dict[str, Any]]:
     """Return mock calendar events."""
     _ensure_loaded()
     return [ev.model_dump(mode="json") for ev in _calendar]
+
+
+@router.post("/emails/refresh")
+async def refresh_emails() -> dict[str, Any]:
+    """Clear the in-memory email store and re-fetch from the source.
+
+    Useful when using IMAP to pull new mail without restarting the server.
+    """
+    _emails.clear()
+    _ensure_loaded()
+    return {"status": "refreshed", "count": len(_emails)}
+

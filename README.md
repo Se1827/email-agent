@@ -65,6 +65,7 @@ tests/               – pytest unit tests
 | POST | `/api/emails/{id}/draft` | Draft a reply |
 | POST | `/api/emails/{id}/approve` | Approve and send (simulated) |
 | POST | `/api/emails/classify-all` | Batch classify |
+| POST | `/api/emails/refresh` | Re-fetch emails from source |
 | GET | `/api/calendar` | Mock calendar events |
 
 ## Tests
@@ -85,12 +86,38 @@ python eval/evaluate.py
 
 The rest of the pipeline (classification, drafting, PII redaction) works unchanged.
 
+## Connecting a Real Email Account
+
+Set `EMAIL_SOURCE=imap` in your `.env` and fill in the IMAP fields — same settings you would use in Thunderbird:
+
+```env
+EMAIL_SOURCE=imap
+IMAP_HOST=imap.gmail.com
+IMAP_PORT=993
+IMAP_USER=you@gmail.com
+IMAP_PASS=your-app-password
+IMAP_MAILBOX=INBOX
+IMAP_USE_SSL=true
+IMAP_FETCH_LIMIT=20
+```
+
+For **Gmail**, you need an [App Password](https://myaccount.google.com/apppasswords) (not your regular password). For **Outlook**, use `imap-mail.outlook.com:993`. Any provider that supports standard IMAP will work.
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GROQ_API_KEY` | -- | Your Groq key |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Chat model to use |
+| `EMAIL_SOURCE` | `mock` | `mock` or `imap` |
+| `IMAP_HOST` | -- | IMAP server address |
+| `IMAP_PORT` | `993` | IMAP port |
+| `IMAP_USER` | -- | Email address / username |
+| `IMAP_PASS` | -- | Password or app password |
+| `IMAP_MAILBOX` | `INBOX` | Folder to read |
+| `IMAP_USE_SSL` | `true` | Use SSL/TLS |
+| `IMAP_FETCH_LIMIT` | `20` | Max emails to fetch |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `API_PORT` | `8000` | FastAPI port |
 | `UI_PORT` | `8501` | Streamlit port |
+
