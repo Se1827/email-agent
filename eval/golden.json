@@ -1,0 +1,99 @@
+[
+    {
+        "id": "g001",
+        "sender": "priya.sharma@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "URGENT: Production DB is down",
+        "body": "The production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors. Please jump on this immediately.",
+        "timestamp": "2026-05-07T14:35:00+05:30",
+        "expected_priority": "critical",
+        "expected_category": "action-required"
+    },
+    {
+        "id": "g002",
+        "sender": "manager@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Quarterly OKR review — deadline Friday",
+        "body": "Reminder that the OKR self-assessment is due this Friday. Please fill in the shared Google Sheet by EOD Thursday.",
+        "timestamp": "2026-05-07T10:15:00+05:30",
+        "expected_priority": "high",
+        "expected_category": "deadline"
+    },
+    {
+        "id": "g003",
+        "sender": "noreply@techdigest.io",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "This week in AI: GPT-5 rumours, new open-source models",
+        "body": "Welcome to your weekly roundup. 1. GPT-5 speculation. 2. Meta new model. 3. Gemini pricing.",
+        "timestamp": "2026-05-06T08:00:00+05:30",
+        "expected_priority": "low",
+        "expected_category": "info"
+    },
+    {
+        "id": "g004",
+        "sender": "raj.patel@company.com",
+        "recipients": [
+            "you@company.com",
+            "team@company.com"
+        ],
+        "subject": "Re: Sprint planning — moved to Wednesday",
+        "body": "Sprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link. Please update your calendars.",
+        "timestamp": "2026-05-07T09:00:00+05:30",
+        "expected_priority": "normal",
+        "expected_category": "meeting"
+    },
+    {
+        "id": "g005",
+        "sender": "deals@spamshop.biz",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Congratulations! You have won a $500 gift card!!!",
+        "body": "CLICK HERE TO CLAIM YOUR PRIZE! You have been selected as today's lucky winner.",
+        "timestamp": "2026-05-07T07:45:00+05:30",
+        "expected_priority": "low",
+        "expected_category": "spam"
+    },
+    {
+        "id": "g006",
+        "sender": "hr@company.com",
+        "recipients": [
+            "all@company.com"
+        ],
+        "subject": "Reminder: mandatory compliance training by May 15",
+        "body": "All employees must complete the annual data-privacy compliance training by May 15. The course is on the internal LMS.",
+        "timestamp": "2026-05-05T11:00:00+05:30",
+        "expected_priority": "normal",
+        "expected_category": "deadline"
+    },
+    {
+        "id": "g007",
+        "sender": "deepak.verma@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Code review request: auth-service PR #312",
+        "body": "Could you review my PR? Fairly contained change — swapping the JWT library. No rush, but before Wednesday sprint.",
+        "timestamp": "2026-05-07T11:30:00+05:30",
+        "expected_priority": "normal",
+        "expected_category": "action-required"
+    },
+    {
+        "id": "g008",
+        "sender": "client.sarah@externalcorp.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Invoice #4821 — payment details",
+        "body": "Please find payment details for invoice #4821. Amount: $12,500. We need this processed before end of week.",
+        "timestamp": "2026-05-07T13:20:00+05:30",
+        "expected_priority": "high",
+        "expected_category": "action-required"
+    }
+]

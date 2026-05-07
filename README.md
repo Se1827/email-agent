@@ -1,0 +1,96 @@
+# Intelligent Email Agent
+
+AI-powered email triage: classifies emails by priority and category, drafts context-aware replies, highlights urgent items, and lets you approve before sending. Built with FastAPI, Streamlit, and Groq (Llama 3.3 70B).
+
+## Prerequisites
+
+- Python 3.12+
+- A Groq API key (free tier works)
+
+## Quickstart
+
+```bash
+# 1. Create a virtual environment
+python -m venv .venv
+source .venv/bin/activate
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Configure environment
+cp .env.example .env
+# Edit .env and set your GROQ_API_KEY
+
+# 4. Run (starts both API + Streamlit UI)
+python run.py
+
+# API only (no UI):
+python run.py --api-only
+```
+
+The API runs at `http://localhost:8000`, the UI at `http://localhost:8501`.
+
+## Project Structure
+
+```
+src/
+  config.py          – settings from .env
+  models/email.py    – Pydantic data models
+  connectors/mock.py – loads seed emails from JSON
+  llm/client.py      – async Groq wrapper
+  llm/prompts.py     – all prompt templates
+  services/
+    classifier.py    – priority + category via LLM
+    drafter.py       – context-aware reply via LLM
+    calendar.py      – mock calendar context
+    pii.py           – regex PII redactor
+  api/
+    app.py           – FastAPI factory
+    routes.py        – API endpoints
+  logging.py         – structured JSON logging
+
+ui/app.py            – Streamlit dashboard
+data/                – seed emails + mock calendar
+eval/                – golden dataset + evaluation script
+tests/               – pytest unit tests
+```
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/emails` | List all emails |
+| GET | `/api/emails/{id}` | Single email detail |
+| POST | `/api/emails/{id}/classify` | Classify one email |
+| POST | `/api/emails/{id}/draft` | Draft a reply |
+| POST | `/api/emails/{id}/approve` | Approve and send (simulated) |
+| POST | `/api/emails/classify-all` | Batch classify |
+| GET | `/api/calendar` | Mock calendar events |
+
+## Tests
+
+```bash
+# Unit tests (no API key needed — LLM is mocked)
+python -m pytest tests/ -v
+
+# Evaluation against golden dataset (needs API key)
+python eval/evaluate.py
+```
+
+## Adding a New Connector
+
+1. Create a new module in `src/connectors/` (e.g. `imap.py`)
+2. Implement a function with the signature `load_emails(...) -> list[Email]`
+3. Wire it into `src/api/routes.py` in place of the mock connector
+
+The rest of the pipeline (classification, drafting, PII redaction) works unchanged.
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROQ_API_KEY` | -- | Your Groq key |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Chat model to use |
+| `LOG_LEVEL` | `INFO` | Logging level |
+| `API_PORT` | `8000` | FastAPI port |
+| `UI_PORT` | `8501` | Streamlit port |

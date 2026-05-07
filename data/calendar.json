@@ -1,0 +1,36 @@
+[
+    {
+        "title": "Sprint Planning",
+        "start": "2026-05-07T14:00:00+05:30",
+        "end": "2026-05-07T15:00:00+05:30",
+        "attendees": [
+            "you@company.com",
+            "raj.patel@company.com",
+            "team@company.com"
+        ]
+    },
+    {
+        "title": "1:1 with Manager",
+        "start": "2026-05-08T10:00:00+05:30",
+        "end": "2026-05-08T10:30:00+05:30",
+        "attendees": [
+            "you@company.com",
+            "manager@company.com"
+        ]
+    },
+    {
+        "title": "Compliance Training Deadline",
+        "start": "2026-05-15T23:59:00+05:30",
+        "end": "2026-05-15T23:59:00+05:30",
+        "attendees": []
+    },
+    {
+        "title": "OKR Review Submission",
+        "start": "2026-05-09T18:00:00+05:30",
+        "end": "2026-05-09T18:00:00+05:30",
+        "attendees": [
+            "you@company.com",
+            "manager@company.com"
+        ]
+    }
+]

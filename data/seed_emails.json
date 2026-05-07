@@ -1,0 +1,91 @@
+[
+    {
+        "id": "e001",
+        "sender": "priya.sharma@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "URGENT: Production DB is down",
+        "body": "Hey,\n\nThe production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors across the dashboard. DevOps is looking into it but we need someone from the backend team to check the connection pool config ASAP.\n\nPlease jump on this immediately.",
+        "timestamp": "2026-05-07T14:35:00+05:30",
+        "thread_id": "t001"
+    },
+    {
+        "id": "e002",
+        "sender": "manager@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Quarterly OKR review — deadline Friday",
+        "body": "Hi,\n\nJust a reminder that the OKR self-assessment is due this Friday (May 9). Please fill in your progress against each key result in the shared Google Sheet and send me a brief summary by EOD Thursday so I can consolidate before the leadership sync.\n\nThanks.",
+        "timestamp": "2026-05-07T10:15:00+05:30",
+        "thread_id": "t002"
+    },
+    {
+        "id": "e003",
+        "sender": "noreply@techdigest.io",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "This week in AI: GPT-5 rumours, new open-source models",
+        "body": "Welcome to your weekly roundup.\n\n1. GPT-5 speculation heats up after leaked benchmark results.\n2. Meta releases a new 70B open-weight model.\n3. Google announces Gemini Ultra pricing changes.\n\nRead more on our blog: https://techdigest.io/weekly/2026-05-05\n\nUnsubscribe: https://techdigest.io/unsub?uid=abc123",
+        "timestamp": "2026-05-06T08:00:00+05:30",
+        "thread_id": null
+    },
+    {
+        "id": "e004",
+        "sender": "raj.patel@company.com",
+        "recipients": [
+            "you@company.com",
+            "team@company.com"
+        ],
+        "subject": "Re: Sprint planning — moved to Wednesday",
+        "body": "Hi all,\n\nSprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link.\n\nPlease update your calendars. I have sent an updated invite.\n\nThanks,\nRaj",
+        "timestamp": "2026-05-07T09:00:00+05:30",
+        "thread_id": "t003"
+    },
+    {
+        "id": "e005",
+        "sender": "hr@company.com",
+        "recipients": [
+            "all@company.com"
+        ],
+        "subject": "Reminder: mandatory compliance training by May 15",
+        "body": "Dear team,\n\nThis is a reminder that all employees must complete the annual data-privacy compliance training by May 15, 2026. The course is available on the internal LMS portal.\n\nFailure to complete it by the deadline may result in access restrictions.\n\nRegards,\nHR Team",
+        "timestamp": "2026-05-05T11:00:00+05:30",
+        "thread_id": null
+    },
+    {
+        "id": "e006",
+        "sender": "client.sarah@externalcorp.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Invoice #4821 — payment details",
+        "body": "Hi,\n\nPlease find the payment details for invoice #4821:\n\nAmount: $12,500.00\nBank: First National Bank\nAccount: 9283-7461-0023\nRouting: 021000021\n\nLet me know once the transfer is initiated. We need this processed before end of week.\n\nRegards,\nSarah",
+        "timestamp": "2026-05-07T13:20:00+05:30",
+        "thread_id": "t004"
+    },
+    {
+        "id": "e007",
+        "sender": "deals@spamshop.biz",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Congratulations! You have won a $500 gift card!!!",
+        "body": "CLICK HERE TO CLAIM YOUR PRIZE!\n\nYou have been selected as today's lucky winner. Claim your $500 Amazon gift card by clicking the link below:\n\nhttp://totallylegit.biz/claim?id=xyz\n\nOffer expires in 24 hours!",
+        "timestamp": "2026-05-07T07:45:00+05:30",
+        "thread_id": null
+    },
+    {
+        "id": "e008",
+        "sender": "deepak.verma@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Code review request: auth-service PR #312",
+        "body": "Hey,\n\nCould you review my PR for the auth-service refactor? It is a fairly contained change — just swapping the JWT library and updating the middleware.\n\nPR link: https://github.com/company/auth-service/pull/312\n\nNo rush, but would be great to get it merged before the Wednesday sprint.\n\nCheers,\nDeepak",
+        "timestamp": "2026-05-07T11:30:00+05:30",
+        "thread_id": "t005"
+    }
+]
