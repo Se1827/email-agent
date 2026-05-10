@@ -1,58 +1,67 @@
 # Intelligent Email Agent
 
-AI-powered email triage: classifies emails by priority and category, drafts context-aware replies, highlights urgent items, and lets you approve before sending. Built with FastAPI, Streamlit, and Groq (Llama 3.3 70B).
+AI-powered email triage: classifies emails by priority and category, drafts context-aware replies, highlights urgent items, and lets you approve before sending. Built with FastAPI, React, and Groq (Llama 3.3 70B).
 
 ## Prerequisites
 
 - Python 3.12+
+- Node.js 18+
 - A Groq API key (free tier works)
 
 ## Quickstart
 
 ```bash
-# 1. Create a virtual environment
+# 1. Create a virtual environment and install Python deps
 python -m venv .venv
 source .venv/bin/activate
-
-# 2. Install dependencies
 pip install -r requirements.txt
+
+# 2. Install frontend deps
+cd frontend && npm install && cd ..
 
 # 3. Configure environment
 cp .env.example .env
 # Edit .env and set your GROQ_API_KEY
 
-# 4. Run (starts both API + Streamlit UI)
+# 4. Run (starts both API + React UI)
 python run.py
-
-# API only (no UI):
-python run.py --api-only
 ```
 
-The API runs at `http://localhost:8000`, the UI at `http://localhost:8501`.
+The API runs at `http://localhost:8000`, the React UI at `http://localhost:5173`.
+
+```bash
+# Other run modes:
+python run.py --api-only         # API server only
+python run.py --ui=streamlit     # legacy Streamlit UI on :8501
+```
 
 ## Project Structure
 
 ```
 src/
-  config.py          – settings from .env
-  models/email.py    – Pydantic data models
-  connectors/mock.py – loads seed emails from JSON
-  llm/client.py      – async Groq wrapper
-  llm/prompts.py     – all prompt templates
+  config.py            – settings from .env
+  models/email.py      – Pydantic data models
+  connectors/
+    mock.py            – loads seed emails from JSON
+    imap.py            – real IMAP mailbox connector
+  llm/
+    client.py          – async Groq wrapper
+    prompts.py         – all prompt templates
   services/
-    classifier.py    – priority + category via LLM
-    drafter.py       – context-aware reply via LLM
-    calendar.py      – mock calendar context
-    pii.py           – regex PII redactor
+    classifier.py      – priority + category via LLM
+    drafter.py         – context-aware reply via LLM
+    calendar.py        – mock calendar context
+    pii.py             – regex PII redactor
   api/
-    app.py           – FastAPI factory
-    routes.py        – API endpoints
-  logging.py         – structured JSON logging
+    app.py             – FastAPI factory
+    routes.py          – API endpoints
+  logging.py           – structured JSON logging
 
-ui/app.py            – Streamlit dashboard
-data/                – seed emails + mock calendar
-eval/                – golden dataset + evaluation script
-tests/               – pytest unit tests
+frontend/src/          – React email client UI (Vite)
+ui/app.py              – legacy Streamlit dashboard
+data/                  – seed emails + mock calendar
+eval/                  – golden dataset + evaluation script
+tests/                 – pytest unit tests
 ```
 
 ## API Endpoints
@@ -67,24 +76,6 @@ tests/               – pytest unit tests
 | POST | `/api/emails/classify-all` | Batch classify |
 | POST | `/api/emails/refresh` | Re-fetch emails from source |
 | GET | `/api/calendar` | Mock calendar events |
-
-## Tests
-
-```bash
-# Unit tests (no API key needed — LLM is mocked)
-python -m pytest tests/ -v
-
-# Evaluation against golden dataset (needs API key)
-python eval/evaluate.py
-```
-
-## Adding a New Connector
-
-1. Create a new module in `src/connectors/` (e.g. `imap.py`)
-2. Implement a function with the signature `load_emails(...) -> list[Email]`
-3. Wire it into `src/api/routes.py` in place of the mock connector
-
-The rest of the pipeline (classification, drafting, PII redaction) works unchanged.
 
 ## Connecting a Real Email Account
 
@@ -103,6 +94,24 @@ IMAP_FETCH_LIMIT=20
 
 For **Gmail**, you need an [App Password](https://myaccount.google.com/apppasswords) (not your regular password). For **Outlook**, use `imap-mail.outlook.com:993`. Any provider that supports standard IMAP will work.
 
+## Tests
+
+```bash
+# Unit tests (no API key needed — LLM is mocked)
+python -m pytest tests/ -v
+
+# Evaluation against golden dataset (needs API key)
+python eval/evaluate.py
+```
+
+## Adding a New Connector
+
+1. Create a new module in `src/connectors/` (e.g. `graph.py`)
+2. Implement a function that returns `list[Email]`
+3. Add a new `EMAIL_SOURCE` option in `config.py` and `routes.py`
+
+The rest of the pipeline (classification, drafting, PII redaction) works unchanged.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -120,4 +129,3 @@ For **Gmail**, you need an [App Password](https://myaccount.google.com/apppasswo
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `API_PORT` | `8000` | FastAPI port |
 | `UI_PORT` | `8501` | Streamlit port |
-
