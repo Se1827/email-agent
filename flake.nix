@@ -18,6 +18,7 @@
             python
             pkgs.python312Packages.pip
             pkgs.python312Packages.virtualenv
+            pkgs.nodejs_22
 
             # System libs that some Python packages need
             pkgs.stdenv.cc.cc.lib

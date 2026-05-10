@@ -1,4 +1,4 @@
-"""Entrypoint — starts the FastAPI server and optionally the Streamlit UI."""
+"""Entrypoint — starts the FastAPI server and optionally the React UI dev server."""
 
 from __future__ import annotations
 
@@ -7,6 +7,9 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 def main() -> None:
@@ -14,12 +17,17 @@ def main() -> None:
     parser.add_argument(
         "--api-only",
         action="store_true",
-        help="Start the FastAPI server only (skip Streamlit).",
+        help="Start the FastAPI server only (skip frontend).",
+    )
+    parser.add_argument(
+        "--ui",
+        choices=["react", "streamlit"],
+        default="react",
+        help="Which UI to start (default: react).",
     )
     args = parser.parse_args()
 
     api_port = os.getenv("API_PORT", "8000")
-    ui_port = os.getenv("UI_PORT", "8501")
 
     # Start the FastAPI server.
     api_cmd = [
@@ -35,17 +43,23 @@ def main() -> None:
 
     ui_proc = None
     if not args.api_only:
-        # Give uvicorn a moment to bind the port before Streamlit tries to reach it.
         time.sleep(2)
 
-        ui_cmd = [
-            sys.executable, "-m", "streamlit", "run",
-            "ui/app.py",
-            "--server.port", ui_port,
-            "--server.headless", "true",
-        ]
-        print(f"Starting Streamlit UI on http://localhost:{ui_port}")
-        ui_proc = subprocess.Popen(ui_cmd)
+        if args.ui == "react":
+            frontend_dir = PROJECT_ROOT / "frontend"
+            ui_cmd = ["npm", "run", "dev"]
+            print(f"Starting React UI (Vite dev server)")
+            ui_proc = subprocess.Popen(ui_cmd, cwd=frontend_dir)
+        else:
+            ui_port = os.getenv("UI_PORT", "8501")
+            ui_cmd = [
+                sys.executable, "-m", "streamlit", "run",
+                "ui/app.py",
+                "--server.port", ui_port,
+                "--server.headless", "true",
+            ]
+            print(f"Starting Streamlit UI on http://localhost:{ui_port}")
+            ui_proc = subprocess.Popen(ui_cmd)
 
     try:
         api_proc.wait()

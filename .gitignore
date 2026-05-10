@@ -8,6 +8,9 @@ dist/
 build/
 *.whl
 
+# Node
+node_modules/
+
 # Virtual environment
 .venv/
 venv/
