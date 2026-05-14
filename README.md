@@ -4,7 +4,7 @@ AI-powered email triage: classifies emails by priority and category, drafts cont
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.11+
 - Node.js 18+
 - A Groq API key (free tier works)
 

@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+import platform
 import time
 from pathlib import Path
 
@@ -49,7 +50,14 @@ def main() -> None:
             frontend_dir = PROJECT_ROOT / "frontend"
             ui_cmd = ["npm", "run", "dev"]
             print(f"Starting React UI (Vite dev server)")
-            ui_proc = subprocess.Popen(ui_cmd, cwd=frontend_dir)
+            if platform.system() == "Windows":
+                ui_proc = subprocess.Popen(
+                    " ".join(ui_cmd),
+                    cwd=frontend_dir,
+                    shell=True
+                )
+            else:
+                ui_proc = subprocess.Popen(ui_cmd, cwd=frontend_dir)
         else:
             ui_port = os.getenv("UI_PORT", "8501")
             ui_cmd = [
