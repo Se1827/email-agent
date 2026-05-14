@@ -8,6 +8,8 @@ import time
 from groq import AsyncGroq
 
 from src.config import get_settings
+from src.observability import span
+from src.storage import safe_record_llm_interaction
 
 log = logging.getLogger(__name__)
 
@@ -39,15 +41,24 @@ async def chat(
     log.info("llm_request", extra={"model": model, "prompt_chars": prompt_chars})
 
     start = time.perf_counter()
-    response = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    with span("llm.chat", model=model, prompt_chars=prompt_chars):
+        response = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
     elapsed = time.perf_counter() - start
 
     reply = response.choices[0].message.content or ""
+    safe_record_llm_interaction(
+        purpose="chat",
+        model=model,
+        messages=messages,
+        response=reply,
+        latency_s=round(elapsed, 3),
+        metadata={"temperature": temperature, "max_tokens": max_tokens},
+    )
     log.info(
         "llm_response",
         extra={

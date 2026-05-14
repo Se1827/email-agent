@@ -7,6 +7,8 @@ import logging
 import sys
 from datetime import datetime, timezone
 
+from src.observability import current_trace_context
+
 
 class JSONFormatter(logging.Formatter):
     """Emit each log record as a single JSON line."""
@@ -18,10 +20,28 @@ class JSONFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        entry.update(current_trace_context())
 
         # Merge any extra fields passed via the ``extra`` kwarg.
-        for key in ("model", "prompt_chars", "latency_s", "reply_chars",
-                     "email_id", "priority", "category", "pii_redacted"):
+        for key in (
+            "model",
+            "prompt_chars",
+            "latency_s",
+            "reply_chars",
+            "email_id",
+            "priority",
+            "category",
+            "pii_redacted",
+            "pii_masked",
+            "pii_types",
+            "storage_enabled",
+            "storage_event",
+            "otel_enabled",
+            "otel_service_name",
+            "otel_exporter",
+            "eval_case_id",
+            "eval_score",
+        ):
             value = getattr(record, key, None)
             if value is not None:
                 entry[key] = value

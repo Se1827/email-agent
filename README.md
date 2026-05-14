@@ -52,6 +52,8 @@ src/
     drafter.py         – context-aware reply via LLM
     calendar.py        – mock calendar context
     pii.py             – fast regex-first privacy gateway + lazy semantic masking
+  storage.py           – encrypted PostgreSQL app storage (optional async writer)
+  observability.py     – OpenTelemetry setup and span helpers
   api/
     app.py             – FastAPI factory
     routes.py          – API endpoints
@@ -100,9 +102,18 @@ For **Gmail**, you need an [App Password](https://myaccount.google.com/apppasswo
 # Unit tests (no API key needed — LLM is mocked)
 python -m pytest tests/ -v
 
-# Evaluation against golden dataset (needs API key)
+# Offline full pipeline evaluation (LLM mocked, PII/prompt/draft checks active)
 python eval/evaluate.py
+
+# Live evaluation against the configured model
+python eval/evaluate.py --live
 ```
+
+## Storage and Observability
+
+Encrypted PostgreSQL storage is optional and off by default. When enabled, the app stores full emails, calendar events, workflow events, LLM prompts/responses, approvals, and evaluation artifacts. Searchable metadata stays small and non-sensitive; full payloads are encrypted with `STORAGE_ENCRYPTION_KEY` before insert. Runtime writes use a background queue so storage cannot slow down classification or drafting.
+
+OpenTelemetry is optional and off by default. Set `OTEL_ENABLED=true` to instrument FastAPI and local spans. If `OTEL_EXPORTER_OTLP_ENDPOINT` is empty, spans go to console; otherwise they are exported over OTLP HTTP.
 
 ## Adding a New Connector
 
@@ -129,3 +140,9 @@ The rest of the pipeline (classification, drafting, PII redaction) works unchang
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `API_PORT` | `8000` | FastAPI port |
 | `UI_PORT` | `8501` | Streamlit port |
+| `STORAGE_ENABLED` | `false` | Enable encrypted PostgreSQL storage |
+| `DATABASE_URL` | -- | PostgreSQL connection string |
+| `STORAGE_ENCRYPTION_KEY` | -- | Fernet key for app-side payload encryption |
+| `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |
+| `OTEL_SERVICE_NAME` | `email-agent` | Service name for traces |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | -- | Optional OTLP HTTP collector endpoint |

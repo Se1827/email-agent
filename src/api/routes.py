@@ -13,6 +13,7 @@ from src.connectors.imap import fetch_emails as fetch_imap_emails
 from src.models.email import CalendarEvent, Classification, DraftReply, Email
 from src.services import classifier, drafter
 from src.services.calendar import get_upcoming_events, load_events
+from src.storage import safe_record_event, safe_store_calendar_event, safe_store_email
 
 log = logging.getLogger(__name__)
 
@@ -44,8 +45,10 @@ def _ensure_loaded() -> None:
     """Populate the in-memory stores on first access."""
     if not _emails:
         try:
+            source = get_settings().email_source
             for email in _load_email_source():
                 _emails[email.id] = email
+                safe_store_email(email, source=source)
         except Exception as exc:
             log.error("email_load_failed", extra={"error": str(exc)})
             raise HTTPException(
@@ -57,6 +60,8 @@ def _ensure_loaded() -> None:
             )
     if not _calendar:
         _calendar.extend(load_events(get_settings().data_dir / "calendar.json"))
+        for event in _calendar:
+            safe_store_calendar_event(event, source="mock")
 
 
 def _get_email(email_id: str) -> Email:
@@ -93,6 +98,15 @@ async def classify_email(email_id: str) -> dict[str, Any]:
     email = _get_email(email_id)
     result = await classifier.classify(email, _relevant_events(email))
     email.classification = result
+    safe_record_event(
+        "email.classified",
+        {
+            "classification": result.model_dump(mode="json"),
+            "subject": email.subject,
+            "sender": email.sender,
+        },
+        subject_id=email.id,
+    )
     return result.model_dump(mode="json")
 
 
@@ -112,6 +126,16 @@ async def draft_email_reply(email_id: str) -> dict[str, Any]:
         email, email.classification, _relevant_events(email)
     )
     email.draft_reply = result
+    safe_record_event(
+        "email.drafted",
+        {
+            "classification": email.classification.model_dump(mode="json"),
+            "draft_reply": result.model_dump(mode="json"),
+            "subject": email.subject,
+            "sender": email.sender,
+        },
+        subject_id=email.id,
+    )
     return result.model_dump(mode="json")
 
 
@@ -126,6 +150,11 @@ async def approve_draft(email_id: str) -> dict[str, str]:
         )
     log.info("draft_approved", extra={"email_id": email_id})
     body_preview = email.draft_reply.body[:80]
+    safe_record_event(
+        "email.approved",
+        {"preview": body_preview},
+        subject_id=email.id,
+    )
     # In a real system, this would send the email.
     email.draft_reply = None
     return {"status": "sent", "preview": body_preview}
@@ -140,6 +169,15 @@ async def classify_all() -> list[dict[str, Any]]:
         if email.classification is None:
             result = await classifier.classify(email, _relevant_events(email))
             email.classification = result
+            safe_record_event(
+                "email.classified",
+                {
+                    "classification": result.model_dump(mode="json"),
+                    "subject": email.subject,
+                    "sender": email.sender,
+                },
+                subject_id=email.id,
+            )
             results.append({
                 "email_id": email.id,
                 "classification": result.model_dump(mode="json"),
