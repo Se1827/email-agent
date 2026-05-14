@@ -107,6 +107,9 @@ python eval/evaluate.py
 
 # Live evaluation against the configured model
 python eval/evaluate.py --live
+
+# Include an explicit encrypted PostgreSQL write probe
+python eval/evaluate.py --live --storage-probe
 ```
 
 ## Storage and Observability
@@ -114,6 +117,8 @@ python eval/evaluate.py --live
 Encrypted PostgreSQL storage is optional and off by default. When enabled, the app stores full emails, calendar events, workflow events, LLM prompts/responses, approvals, and evaluation artifacts. Searchable metadata stays small and non-sensitive; full payloads are encrypted with `STORAGE_ENCRYPTION_KEY` before insert. Runtime writes use a background queue so storage cannot slow down classification or drafting.
 
 OpenTelemetry is optional and off by default. Set `OTEL_ENABLED=true` to instrument FastAPI and local spans. If `OTEL_EXPORTER_OTLP_ENDPOINT` is empty, spans go to console; otherwise they are exported over OTLP HTTP.
+
+Evaluation writes two artifacts per run in `eval/reports/`: a Markdown report for human review and a JSON report for automation. Each case includes the input email, PII mappings, masked body, exact prompt sent to the LLM, raw LLM output, parsed classification, draft, privacy checks, and storage diagnostics. Live eval separates must-pass checks (classification + privacy + prompt capture) from review checks (draft wording), so correct model behavior is not marked failed just because the draft uses different phrasing.
 
 ## Adding a New Connector
 
