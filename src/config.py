@@ -22,6 +22,7 @@ class Settings:
     api_port: int
     ui_port: int
     data_dir: Path
+    pii_mode: str
 
     # Email source: "mock" (use seed JSON) or "imap" (connect to real mailbox)
     email_source: str
@@ -60,6 +61,7 @@ class Settings:
             api_port=int(os.getenv("API_PORT", "8000")),
             ui_port=int(os.getenv("UI_PORT", "8501")),
             data_dir=PROJECT_ROOT / "data",
+            pii_mode=os.getenv("PII_MODE", "strict_presidio"),
             email_source=os.getenv("EMAIL_SOURCE", "mock"),
             imap_host=os.getenv("IMAP_HOST", ""),
             imap_port=int(os.getenv("IMAP_PORT", "993")),

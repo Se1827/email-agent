@@ -51,7 +51,7 @@ src/
     classifier.py      – priority + category via LLM
     drafter.py         – context-aware reply via LLM
     calendar.py        – mock calendar context
-    pii.py             – fast regex-first privacy gateway + lazy semantic masking
+    pii.py             – configurable privacy gateway for regex, lazy semantic, or strict Presidio masking
   storage.py           – encrypted PostgreSQL app storage (optional async writer)
   observability.py     – OpenTelemetry setup and span helpers
   api/
@@ -158,6 +158,18 @@ python scripts/storage_admin.py wipe-all
 
 OpenTelemetry is optional and off by default. Set `OTEL_ENABLED=true` to instrument FastAPI and local spans. If `OTEL_EXPORTER_OTLP_ENDPOINT` is empty, spans go to console; otherwise they are exported over OTLP HTTP.
 
+## PII Masking Modes
+
+Set `PII_MODE` to control the privacy/latency tradeoff before anything is sent to the LLM:
+
+| Mode | Behavior | Tradeoff |
+|------|----------|----------|
+| `strict_presidio` | Regex masking plus semantic detection on every prompt | Safest, slowest |
+| `lazy_semantic` | Regex masking plus semantic detection only when sensitive context words appear | Faster, can miss ordinary names/places |
+| `regex_only` | Regex masking only | Fastest, can miss names and other semantic PII |
+
+Default is `strict_presidio`.
+
 Evaluation writes two artifacts per run in `eval/reports/`: a Markdown report for human review and a JSON report for automation. Each case includes the input email, PII mappings, masked body, exact prompt sent to the LLM, raw LLM output, parsed classification, draft, privacy checks, and storage diagnostics. Live eval separates must-pass checks (classification + privacy + prompt capture) from review checks (draft wording), so correct model behavior is not marked failed just because the draft uses different phrasing.
 
 ## Adding a New Connector
@@ -185,6 +197,7 @@ The rest of the pipeline (classification, drafting, PII redaction) works unchang
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `API_PORT` | `8000` | FastAPI port |
 | `UI_PORT` | `8501` | Streamlit port |
+| `PII_MODE` | `strict_presidio` | `strict_presidio`, `lazy_semantic`, or `regex_only` masking mode |
 | `STORAGE_ENABLED` | `false` | Enable encrypted PostgreSQL storage |
 | `DATABASE_URL` | -- | PostgreSQL connection string |
 | `STORAGE_ENCRYPTION_KEY` | -- | Fernet key for app-side payload encryption |
