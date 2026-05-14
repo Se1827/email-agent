@@ -1,0 +1,1004 @@
+{
+  "summary": {
+    "run_id": "d50d3216-5dd0-481e-beed-d0fc56d7fd72",
+    "mode": "offline",
+    "created_at": "2026-05-14T21:22:59.142407+00:00",
+    "case_count": 8,
+    "passed": 8,
+    "failed": 0,
+    "must_pass_score": 1.0,
+    "review_score": 1.0,
+    "storage": {
+      "configured": false,
+      "probe_requested": false,
+      "encryption_roundtrip": true,
+      "write_probe": "skipped"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "g001",
+      "input_email": {
+        "sender": "priya.sharma@company.com",
+        "recipients": [
+          "you@company.com"
+        ],
+        "subject": "URGENT: Production DB is down",
+        "body": "The production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors. Please jump on this immediately. THEY gettings eror: E42234:21:DB_CONN_FAIL:STEVE",
+        "timestamp": "2026-05-07T14:35:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_2]]",
+          "subject": "URGENT: Production DB is down",
+          "body": "The production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors. Please jump on this immediately. THEY gettings eror: E42234:21:DB_CONN_FAIL:STEVE"
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "pr***om"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          }
+        ],
+        "found_types": [
+          "email_address"
+        ],
+        "semantic_nlp_loaded": false
+      },
+      "expected": {
+        "priority": "critical",
+        "category": "action-required",
+        "draft_contains": [
+          "jumping on this",
+          "update"
+        ],
+        "pii_must_not_reach_llm": [],
+        "mask_tokens": []
+      },
+      "actual": {
+        "priority": "critical",
+        "category": "action-required",
+        "confidence": 0.96,
+        "reasoning": "Production outage needs immediate action.",
+        "draft_body": "I am jumping on this now and will share an update as soon as I identify the cause."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T14:35:00+05:30\nSubject: URGENT: Production DB is down\n\nThe production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors. Please jump on this immediately. THEY gettings eror: E42234:21:DB_CONN_FAIL:STEVE\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T14:35:00+05:30\nSubject: URGENT: Production DB is down\n\nThe production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors. Please jump on this immediately. THEY gettings eror: E42234:21:DB_CONN_FAIL:STEVE\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"critical\", \"category\": \"action-required\", \"confidence\": 0.96, \"reasoning\": \"Production outage needs immediate action.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: URGENT: Production DB is down\nDate: 2026-05-07T14:35:00+05:30\n\nThe production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors. Please jump on this immediately. THEY gettings eror: E42234:21:DB_CONN_FAIL:STEVE\n\n--- Classification ---\nPriority: critical\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: URGENT: Production DB is down\nDate: 2026-05-07T14:35:00+05:30\n\nThe production database cluster went unresponsive at 14:32 IST. Users are seeing 500 errors. Please jump on this immediately. THEY gettings eror: E42234:21:DB_CONN_FAIL:STEVE\n\n--- Classification ---\nPriority: critical\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "I am jumping on this now and will share an update as soon as I identify the cause.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "jumping on this": true,
+        "update": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    },
+    {
+      "case_id": "g002",
+      "input_email": {
+        "sender": "manager@company.com",
+        "recipients": [
+          "you@company.com"
+        ],
+        "subject": "Quarterly OKR review - deadline Friday",
+        "body": "Reminder that the OKR self-assessment is due this Friday. Please fill in the shared Google Sheet by EOD Thursday.",
+        "timestamp": "2026-05-07T10:15:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_2]]",
+          "subject": "Quarterly OKR review - deadline Friday",
+          "body": "Reminder that the OKR self-assessment is due this Friday. Please fill in the shared Google Sheet by EOD Thursday."
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "ma***om"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          }
+        ],
+        "found_types": [
+          "email_address"
+        ],
+        "semantic_nlp_loaded": false
+      },
+      "expected": {
+        "priority": "high",
+        "category": "deadline",
+        "draft_contains": [
+          "Thursday EOD"
+        ],
+        "pii_must_not_reach_llm": [],
+        "mask_tokens": []
+      },
+      "actual": {
+        "priority": "high",
+        "category": "deadline",
+        "confidence": 0.9,
+        "reasoning": "The email has a near-term deadline.",
+        "draft_body": "Thanks for the reminder. I will complete the OKR self-assessment by Thursday EOD."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T10:15:00+05:30\nSubject: Quarterly OKR review - deadline Friday\n\nReminder that the OKR self-assessment is due this Friday. Please fill in the shared Google Sheet by EOD Thursday.\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T10:15:00+05:30\nSubject: Quarterly OKR review - deadline Friday\n\nReminder that the OKR self-assessment is due this Friday. Please fill in the shared Google Sheet by EOD Thursday.\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"high\", \"category\": \"deadline\", \"confidence\": 0.9, \"reasoning\": \"The email has a near-term deadline.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Quarterly OKR review - deadline Friday\nDate: 2026-05-07T10:15:00+05:30\n\nReminder that the OKR self-assessment is due this Friday. Please fill in the shared Google Sheet by EOD Thursday.\n\n--- Classification ---\nPriority: high\nCategory: deadline\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Quarterly OKR review - deadline Friday\nDate: 2026-05-07T10:15:00+05:30\n\nReminder that the OKR self-assessment is due this Friday. Please fill in the shared Google Sheet by EOD Thursday.\n\n--- Classification ---\nPriority: high\nCategory: deadline\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "Thanks for the reminder. I will complete the OKR self-assessment by Thursday EOD.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "Thursday EOD": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    },
+    {
+      "case_id": "g003",
+      "input_email": {
+        "sender": "noreply@techdigest.io",
+        "recipients": [
+          "you@company.com"
+        ],
+        "subject": "This week in AI: new open-source models",
+        "body": "Welcome to your weekly roundup. New model releases, pricing changes, and research links inside.",
+        "timestamp": "2026-05-06T08:00:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_2]]",
+          "subject": "This week in AI: new open-source models",
+          "body": "Welcome to your weekly roundup. New model releases, pricing changes, and research links inside."
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "no***io"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          }
+        ],
+        "found_types": [
+          "email_address"
+        ],
+        "semantic_nlp_loaded": false
+      },
+      "expected": {
+        "priority": "low",
+        "category": "info",
+        "draft_contains": [
+          "Thanks"
+        ],
+        "pii_must_not_reach_llm": [],
+        "mask_tokens": []
+      },
+      "actual": {
+        "priority": "low",
+        "category": "info",
+        "confidence": 0.87,
+        "reasoning": "It is an informational newsletter.",
+        "draft_body": "Thanks for sharing."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-06T08:00:00+05:30\nSubject: This week in AI: new open-source models\n\nWelcome to your weekly roundup. New model releases, pricing changes, and research links inside.\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-06T08:00:00+05:30\nSubject: This week in AI: new open-source models\n\nWelcome to your weekly roundup. New model releases, pricing changes, and research links inside.\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"low\", \"category\": \"info\", \"confidence\": 0.87, \"reasoning\": \"It is an informational newsletter.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: This week in AI: new open-source models\nDate: 2026-05-06T08:00:00+05:30\n\nWelcome to your weekly roundup. New model releases, pricing changes, and research links inside.\n\n--- Classification ---\nPriority: low\nCategory: info\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: This week in AI: new open-source models\nDate: 2026-05-06T08:00:00+05:30\n\nWelcome to your weekly roundup. New model releases, pricing changes, and research links inside.\n\n--- Classification ---\nPriority: low\nCategory: info\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "Thanks for sharing.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "Thanks": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    },
+    {
+      "case_id": "g004",
+      "input_email": {
+        "sender": "raj.patel@company.com",
+        "recipients": [
+          "you@company.com",
+          "team@company.com"
+        ],
+        "subject": "Re: Sprint planning - moved to Wednesday",
+        "body": "Sprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link. Please update your calendars.",
+        "timestamp": "2026-05-07T09:00:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_3]], [[EMAIL_ADDRESS_2]]",
+          "subject": "Re: Sprint planning - moved to Wednesday",
+          "body": "Sprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link. Please update your calendars."
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "ra***om"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "te***om"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_3]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          }
+        ],
+        "found_types": [
+          "email_address"
+        ],
+        "semantic_nlp_loaded": false
+      },
+      "expected": {
+        "priority": "normal",
+        "category": "meeting",
+        "draft_contains": [
+          "Wednesday",
+          "2 PM"
+        ],
+        "pii_must_not_reach_llm": [],
+        "mask_tokens": []
+      },
+      "actual": {
+        "priority": "normal",
+        "category": "meeting",
+        "confidence": 0.91,
+        "reasoning": "It is a meeting reschedule.",
+        "draft_body": "Thanks for the update. I will adjust my calendar for Wednesday at 2 PM."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_3]], [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T09:00:00+05:30\nSubject: Re: Sprint planning - moved to Wednesday\n\nSprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link. Please update your calendars.\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_3]], [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T09:00:00+05:30\nSubject: Re: Sprint planning - moved to Wednesday\n\nSprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link. Please update your calendars.\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"normal\", \"category\": \"meeting\", \"confidence\": 0.91, \"reasoning\": \"It is a meeting reschedule.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Re: Sprint planning - moved to Wednesday\nDate: 2026-05-07T09:00:00+05:30\n\nSprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link. Please update your calendars.\n\n--- Classification ---\nPriority: normal\nCategory: meeting\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Re: Sprint planning - moved to Wednesday\nDate: 2026-05-07T09:00:00+05:30\n\nSprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link. Please update your calendars.\n\n--- Classification ---\nPriority: normal\nCategory: meeting\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "Thanks for the update. I will adjust my calendar for Wednesday at 2 PM.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "Wednesday": true,
+        "2 PM": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    },
+    {
+      "case_id": "g005",
+      "input_email": {
+        "sender": "deals@spamshop.biz",
+        "recipients": [
+          "you@company.com"
+        ],
+        "subject": "Congratulations! You have won a $500 gift card!!!",
+        "body": "CLICK HERE TO CLAIM YOUR PRIZE! You have been selected as today's lucky winner.",
+        "timestamp": "2026-05-07T07:45:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_2]]",
+          "subject": "Congratulations! You have won a $500 gift card!!!",
+          "body": "CLICK HERE TO CLAIM YOUR PRIZE! You have been selected as today's lucky winner."
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "de***iz"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          }
+        ],
+        "found_types": [
+          "email_address"
+        ],
+        "semantic_nlp_loaded": false
+      },
+      "expected": {
+        "priority": "low",
+        "category": "spam",
+        "draft_contains": [
+          "No response"
+        ],
+        "pii_must_not_reach_llm": [],
+        "mask_tokens": []
+      },
+      "actual": {
+        "priority": "low",
+        "category": "spam",
+        "confidence": 0.93,
+        "reasoning": "The message is unsolicited prize spam.",
+        "draft_body": "No response needed."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T07:45:00+05:30\nSubject: Congratulations! You have won a $500 gift card!!!\n\nCLICK HERE TO CLAIM YOUR PRIZE! You have been selected as today's lucky winner.\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T07:45:00+05:30\nSubject: Congratulations! You have won a $500 gift card!!!\n\nCLICK HERE TO CLAIM YOUR PRIZE! You have been selected as today's lucky winner.\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"low\", \"category\": \"spam\", \"confidence\": 0.93, \"reasoning\": \"The message is unsolicited prize spam.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Congratulations! You have won a $500 gift card!!!\nDate: 2026-05-07T07:45:00+05:30\n\nCLICK HERE TO CLAIM YOUR PRIZE! You have been selected as today's lucky winner.\n\n--- Classification ---\nPriority: low\nCategory: spam\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Congratulations! You have won a $500 gift card!!!\nDate: 2026-05-07T07:45:00+05:30\n\nCLICK HERE TO CLAIM YOUR PRIZE! You have been selected as today's lucky winner.\n\n--- Classification ---\nPriority: low\nCategory: spam\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "No response needed.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "No response": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    },
+    {
+      "case_id": "g006",
+      "input_email": {
+        "sender": "client.sarah@externalcorp.com",
+        "recipients": [
+          "you@company.com"
+        ],
+        "subject": "Invoice #4821 - payment details",
+        "body": "Please process invoice #4821 before end of week. Card: 4111-1111-1111-1111. Routing: 021000021. Account: 9283-7461-0023.",
+        "timestamp": "2026-05-07T13:20:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_2]]",
+          "subject": "Invoice #4821 - payment details",
+          "body": "Please process invoice #4821 before end of week. Card: [[CREDIT_CARD_1]]. Routing: [[ROUTING_NUMBER_1]]. Account: [[BANK_ACCOUNT_1]]."
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "cl***om"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          },
+          {
+            "token": "[[BANK_ACCOUNT_1]]",
+            "entity_type": "BANK_ACCOUNT",
+            "original_preview": "92***23"
+          },
+          {
+            "token": "[[ROUTING_NUMBER_1]]",
+            "entity_type": "ROUTING_NUMBER",
+            "original_preview": "02***21"
+          },
+          {
+            "token": "[[CREDIT_CARD_1]]",
+            "entity_type": "CREDIT_CARD",
+            "original_preview": "41***11"
+          }
+        ],
+        "found_types": [
+          "bank_account",
+          "credit_card",
+          "email_address",
+          "routing_number"
+        ],
+        "semantic_nlp_loaded": true
+      },
+      "expected": {
+        "priority": "high",
+        "category": "action-required",
+        "draft_contains": [
+          "invoice #4821",
+          "confirm"
+        ],
+        "pii_must_not_reach_llm": [
+          "4111-1111-1111-1111",
+          "021000021",
+          "9283-7461-0023"
+        ],
+        "mask_tokens": [
+          "[[CREDIT_CARD_1]]",
+          "[[ROUTING_NUMBER_1]]",
+          "[[BANK_ACCOUNT_1]]"
+        ]
+      },
+      "actual": {
+        "priority": "high",
+        "category": "action-required",
+        "confidence": 0.94,
+        "reasoning": "The sender asks for payment processing this week.",
+        "draft_body": "I will process invoice #4821 before end of week and confirm once complete."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T13:20:00+05:30\nSubject: Invoice #4821 - payment details\n\nPlease process invoice #4821 before end of week. Card: [[CREDIT_CARD_1]]. Routing: [[ROUTING_NUMBER_1]]. Account: [[BANK_ACCOUNT_1]].\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T13:20:00+05:30\nSubject: Invoice #4821 - payment details\n\nPlease process invoice #4821 before end of week. Card: [[CREDIT_CARD_1]]. Routing: [[ROUTING_NUMBER_1]]. Account: [[BANK_ACCOUNT_1]].\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"high\", \"category\": \"action-required\", \"confidence\": 0.94, \"reasoning\": \"The sender asks for payment processing this week.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Invoice #4821 - payment details\nDate: 2026-05-07T13:20:00+05:30\n\nPlease process invoice #4821 before end of week. Card: [[CREDIT_CARD_1]]. Routing: [[ROUTING_NUMBER_1]]. Account: [[BANK_ACCOUNT_1]].\n\n--- Classification ---\nPriority: high\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Invoice #4821 - payment details\nDate: 2026-05-07T13:20:00+05:30\n\nPlease process invoice #4821 before end of week. Card: [[CREDIT_CARD_1]]. Routing: [[ROUTING_NUMBER_1]]. Account: [[BANK_ACCOUNT_1]].\n\n--- Classification ---\nPriority: high\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "I will process invoice #4821 before end of week and confirm once complete.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "invoice #4821": true,
+        "confirm": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    },
+    {
+      "case_id": "g007",
+      "input_email": {
+        "sender": "security@company.com",
+        "recipients": [
+          "you@company.com"
+        ],
+        "subject": "Rotate exposed integration token",
+        "body": "Please rotate this token immediately: token: sk_live_abcdefghijklmnopqrstuvwxyz123456. The service owner is the account holder Jane Doe.",
+        "timestamp": "2026-05-07T16:10:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_2]]",
+          "subject": "Rotate exposed integration token",
+          "body": "Please rotate this token immediately: token: [[API_KEY_1]]. The service owner is the account holder [[PERSON_1]]."
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "se***om"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          },
+          {
+            "token": "[[PERSON_1]]",
+            "entity_type": "PERSON",
+            "original_preview": "********"
+          },
+          {
+            "token": "[[API_KEY_1]]",
+            "entity_type": "API_KEY",
+            "original_preview": "sk***56"
+          }
+        ],
+        "found_types": [
+          "api_key",
+          "email_address",
+          "person"
+        ],
+        "semantic_nlp_loaded": true
+      },
+      "expected": {
+        "priority": "critical",
+        "category": "action-required",
+        "draft_contains": [
+          "rotate",
+          "confirm"
+        ],
+        "pii_must_not_reach_llm": [
+          "sk_live_abcdefghijklmnopqrstuvwxyz123456"
+        ],
+        "mask_tokens": [
+          "[[API_KEY_1]]"
+        ]
+      },
+      "actual": {
+        "priority": "critical",
+        "category": "action-required",
+        "confidence": 0.95,
+        "reasoning": "An exposed token needs immediate rotation.",
+        "draft_body": "I will rotate the exposed integration token immediately and confirm once the service is safe."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T16:10:00+05:30\nSubject: Rotate exposed integration token\n\nPlease rotate this token immediately: token: [[API_KEY_1]]. The service owner is the account holder [[PERSON_1]].\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T16:10:00+05:30\nSubject: Rotate exposed integration token\n\nPlease rotate this token immediately: token: [[API_KEY_1]]. The service owner is the account holder [[PERSON_1]].\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"critical\", \"category\": \"action-required\", \"confidence\": 0.95, \"reasoning\": \"An exposed token needs immediate rotation.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Rotate exposed integration token\nDate: 2026-05-07T16:10:00+05:30\n\nPlease rotate this token immediately: token: [[API_KEY_1]]. The service owner is the account holder [[PERSON_1]].\n\n--- Classification ---\nPriority: critical\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Rotate exposed integration token\nDate: 2026-05-07T16:10:00+05:30\n\nPlease rotate this token immediately: token: [[API_KEY_1]]. The service owner is the account holder [[PERSON_1]].\n\n--- Classification ---\nPriority: critical\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "I will rotate the exposed integration token immediately and confirm once the service is safe.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "rotate": true,
+        "confirm": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    },
+    {
+      "case_id": "g008",
+      "input_email": {
+        "sender": "hr@company.com",
+        "recipients": [
+          "you@company.com"
+        ],
+        "subject": "Candidate background check",
+        "body": "The candidate legal name is Anita Rao. Her SSN is 123-45-6789. Please confirm whether the background check vendor can proceed.",
+        "timestamp": "2026-05-07T12:00:00+05:30"
+      },
+      "privacy": {
+        "masked_email": {
+          "sender": "[[EMAIL_ADDRESS_1]]",
+          "recipients": "[[EMAIL_ADDRESS_2]]",
+          "subject": "Candidate background check",
+          "body": "The candidate legal name is [[PERSON_1]]. Her SSN is [[US_SSN_1]]. Please confirm whether the background check vendor can proceed."
+        },
+        "mappings": [
+          {
+            "token": "[[EMAIL_ADDRESS_1]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "hr***om"
+          },
+          {
+            "token": "[[EMAIL_ADDRESS_2]]",
+            "entity_type": "EMAIL_ADDRESS",
+            "original_preview": "yo***om"
+          },
+          {
+            "token": "[[US_SSN_1]]",
+            "entity_type": "US_SSN",
+            "original_preview": "12***89"
+          },
+          {
+            "token": "[[PERSON_1]]",
+            "entity_type": "PERSON",
+            "original_preview": "An***ao"
+          }
+        ],
+        "found_types": [
+          "email_address",
+          "person",
+          "ssn"
+        ],
+        "semantic_nlp_loaded": true
+      },
+      "expected": {
+        "priority": "high",
+        "category": "action-required",
+        "draft_contains": [
+          "proceed"
+        ],
+        "pii_must_not_reach_llm": [
+          "123-45-6789"
+        ],
+        "mask_tokens": [
+          "[[US_SSN_1]]"
+        ]
+      },
+      "actual": {
+        "priority": "high",
+        "category": "action-required",
+        "confidence": 0.89,
+        "reasoning": "HR needs confirmation to proceed.",
+        "draft_body": "Please proceed with the background check vendor."
+      },
+      "llm_interactions": [
+        {
+          "stage": "classification",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email triage assistant. Your job is to classify an incoming email\nby priority and category.\n\nPriority levels (pick exactly one):\n  - critical: needs response within the hour, deadlines today, outages\n  - high: needs response today, important action items\n  - normal: routine correspondence, can wait a day\n  - low: newsletters, FYI-only, bulk notifications\n\nCategories (pick exactly one):\n  - meeting: meeting invites, reschedules, agenda items\n  - deadline: tasks or deliverables with a due date\n  - info: informational updates, newsletters, announcements\n  - action-required: the sender explicitly asks the recipient to do something\n  - spam: unsolicited marketing, phishing, irrelevant noise\n\nRespond ONLY with a JSON object (no markdown, no extra text):\n{\n  \"priority\": \"<critical|high|normal|low>\",\n  \"category\": \"<meeting|deadline|info|action-required|spam>\",\n  \"confidence\": <0.0-1.0>,\n  \"reasoning\": \"<one sentence explaining your choice>\"\n}\n"
+            },
+            {
+              "role": "user",
+              "content": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T12:00:00+05:30\nSubject: Candidate background check\n\nThe candidate legal name is [[PERSON_1]]. Her SSN is [[US_SSN_1]]. Please confirm whether the background check vendor can proceed.\n\nNo upcoming calendar events."
+            }
+          ],
+          "user_prompt": "From: [[EMAIL_ADDRESS_1]]\nTo: [[EMAIL_ADDRESS_2]]\nDate: 2026-05-07T12:00:00+05:30\nSubject: Candidate background check\n\nThe candidate legal name is [[PERSON_1]]. Her SSN is [[US_SSN_1]]. Please confirm whether the background check vendor can proceed.\n\nNo upcoming calendar events.",
+          "raw_output": "{\"priority\": \"high\", \"category\": \"action-required\", \"confidence\": 0.89, \"reasoning\": \"HR needs confirmation to proceed.\"}",
+          "params": {
+            "temperature": 0.1
+          }
+        },
+        {
+          "stage": "draft",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email reply assistant. Draft a concise, professional reply to the\nemail below. Match the formality of the original sender. Do NOT include\nany personally identifiable information (credit cards, SSNs, phone numbers)\nin your reply \u2014 if the original email contains such data, do not repeat it.\n\nRespond ONLY with the reply body text (no subject line, no \"Dear \u2026\" unless\nappropriate, no signature block).\n"
+            },
+            {
+              "role": "user",
+              "content": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Candidate background check\nDate: 2026-05-07T12:00:00+05:30\n\nThe candidate legal name is [[PERSON_1]]. Her SSN is [[US_SSN_1]]. Please confirm whether the background check vendor can proceed.\n\n--- Classification ---\nPriority: high\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful."
+            }
+          ],
+          "user_prompt": "--- Original email ---\nFrom: [[EMAIL_ADDRESS_1]]\nSubject: Candidate background check\nDate: 2026-05-07T12:00:00+05:30\n\nThe candidate legal name is [[PERSON_1]]. Her SSN is [[US_SSN_1]]. Please confirm whether the background check vendor can proceed.\n\n--- Classification ---\nPriority: high\nCategory: action-required\n\n--- Calendar context ---\nNo upcoming calendar events.\n\n--- Instructions ---\nDraft a reply to this email. Keep it brief and helpful.",
+          "raw_output": "Please proceed with the background check vendor.",
+          "params": {
+            "temperature": 0.4
+          }
+        }
+      ],
+      "checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true,
+        "draft_contains": true
+      },
+      "must_pass_checks": {
+        "priority": true,
+        "category": true,
+        "pii_prompt_absent": true,
+        "mask_tokens_present": true,
+        "prompt_captured": true
+      },
+      "review_checks": {
+        "draft_contains": true
+      },
+      "draft_fragment_matches": {
+        "proceed": true
+      },
+      "passed": true,
+      "status": "PASS",
+      "score": 1.0
+    }
+  ]
+}
