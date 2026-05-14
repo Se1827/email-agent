@@ -59,6 +59,33 @@ CREATE INDEX IF NOT EXISTS idx_encrypted_records_metadata
     ON encrypted_records USING GIN (metadata);
 """
 
+PGVECTOR_SQL = """
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS semantic_memories (
+    id UUID PRIMARY KEY,
+    memory_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    email_id TEXT,
+    thread_id TEXT,
+    summary TEXT NOT NULL,
+    embedding VECTOR(1536),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (memory_type, subject_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_memories_type
+    ON semantic_memories (memory_type);
+CREATE INDEX IF NOT EXISTS idx_semantic_memories_email
+    ON semantic_memories (email_id);
+CREATE INDEX IF NOT EXISTS idx_semantic_memories_thread
+    ON semantic_memories (thread_id);
+CREATE INDEX IF NOT EXISTS idx_semantic_memories_metadata
+    ON semantic_memories USING GIN (metadata);
+"""
+
 
 @dataclass(frozen=True)
 class StoredRecord:
@@ -158,6 +185,7 @@ def init_storage() -> None:
             with conn.cursor() as cur:
                 cur.execute(SCHEMA_SQL)
             conn.commit()
+        _init_pgvector()
     log.info("storage_ready", extra={"storage_enabled": True})
 
 
@@ -181,6 +209,111 @@ def store_email(email: Any, *, source: str) -> StoredRecord | None:
         occurred_at=payload.get("timestamp"),
         metadata=metadata,
     )
+
+
+def load_email_state(email_id: str) -> dict[str, Any] | None:
+    """Return the latest encrypted email payload for cache hydration."""
+    return load_record_payload("email", email_id)
+
+
+def store_pii_mappings(
+    email_id: str,
+    purpose: str,
+    mappings: list[Any],
+) -> StoredRecord | None:
+    """Persist local token->PII mappings encrypted for later rehydration."""
+    if not mappings:
+        return None
+    payload = {
+        "email_id": email_id,
+        "purpose": purpose,
+        "mappings": [
+            {
+                "token": mapping.token,
+                "original": mapping.original,
+                "entity_type": mapping.entity_type,
+            }
+            for mapping in mappings
+        ],
+    }
+    return upsert_record(
+        "pii_mapping",
+        record_id=f"{email_id}:{purpose}",
+        payload=payload,
+        email_id=email_id,
+        source=purpose,
+        metadata={
+            "purpose": purpose,
+            "mapping_count": len(mappings),
+            "entity_types": sorted({mapping.entity_type.lower() for mapping in mappings}),
+        },
+    )
+
+
+def store_thread_state(thread_id: str, payload: dict[str, Any]) -> StoredRecord | None:
+    """Persist compact conversation state used as agent memory."""
+    return upsert_record(
+        "thread_state",
+        record_id=thread_id,
+        payload=payload,
+        thread_id=thread_id,
+        email_id=payload.get("last_email_id"),
+        source="thread_state",
+        metadata={
+            "priority": payload.get("priority"),
+            "category": payload.get("category"),
+            "participant_count": len(payload.get("participants", []) or []),
+        },
+    )
+
+
+def store_user_preferences(user: str, payload: dict[str, Any]) -> StoredRecord | None:
+    """Persist encrypted user drafting preferences."""
+    return upsert_record(
+        "user_preferences",
+        record_id=user,
+        payload={"user": user, **payload},
+        source="user_preferences",
+        metadata={"user_hash": _stable_hash(user)},
+    )
+
+
+def store_semantic_memory(
+    *,
+    memory_type: str,
+    subject_id: str,
+    summary: str,
+    email_id: str | None = None,
+    thread_id: str | None = None,
+    embedding: list[float] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> StoredRecord | None:
+    """Store summary/chunk metadata. Uses pgvector when the extension exists."""
+    encrypted = upsert_record(
+        "semantic_memory",
+        record_id=f"{memory_type}:{subject_id}",
+        payload={
+            "memory_type": memory_type,
+            "subject_id": subject_id,
+            "summary": summary,
+            "embedding": embedding,
+            "metadata": metadata or {},
+        },
+        email_id=email_id,
+        thread_id=thread_id,
+        source=memory_type,
+        metadata={"memory_type": memory_type, **(metadata or {})},
+    )
+    _upsert_semantic_memory_index(
+        memory_type=memory_type,
+        subject_id=subject_id,
+        summary=summary,
+        email_id=email_id,
+        thread_id=thread_id,
+        embedding=embedding,
+        metadata=metadata or {},
+    )
+    return encrypted
 
 
 def store_calendar_event(event: Any, *, source: str = "calendar") -> StoredRecord | None:
@@ -285,6 +418,98 @@ def record_eval_run(run_id: str, payload: dict[str, Any]) -> StoredRecord | None
     )
 
 
+def load_record_payload(record_type: str, record_id: str) -> dict[str, Any] | None:
+    """Fetch and decrypt a typed record by its stable id."""
+    if not storage_configured():
+        return None
+    _require_psycopg()
+
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ciphertext
+                FROM encrypted_records
+                WHERE record_type = %s AND record_id = %s
+                """,
+                (record_type, record_id),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return None
+    return decrypt_payload(row[0], _encryption_key())
+
+
+def storage_stats() -> dict[str, Any]:
+    """Return row counts for the encrypted store and optional vector index."""
+    if not storage_configured():
+        return {"configured": False, "records": {}, "semantic_memories": 0}
+    _require_psycopg()
+
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT record_type, COUNT(*)
+                FROM encrypted_records
+                GROUP BY record_type
+                ORDER BY record_type
+                """
+            )
+            records = {record_type: count for record_type, count in cur.fetchall()}
+            semantic_count = 0
+            if _semantic_memory_index_exists(cur):
+                cur.execute("SELECT COUNT(*) FROM semantic_memories")
+                semantic_count = cur.fetchone()[0]
+    return {
+        "configured": True,
+        "records": records,
+        "semantic_memories": semantic_count,
+    }
+
+
+def delete_email_records(email_id: str) -> dict[str, int]:
+    """Delete all encrypted/vector records tied to one email."""
+    if not storage_configured():
+        return {"encrypted_records": 0, "semantic_memories": 0}
+    _require_psycopg()
+
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM encrypted_records WHERE email_id = %s", (email_id,))
+            encrypted_deleted = cur.rowcount
+            semantic_deleted = 0
+            if _semantic_memory_index_exists(cur):
+                cur.execute("DELETE FROM semantic_memories WHERE email_id = %s", (email_id,))
+                semantic_deleted = cur.rowcount
+        conn.commit()
+    return {
+        "encrypted_records": encrypted_deleted,
+        "semantic_memories": semantic_deleted,
+    }
+
+
+def delete_all_storage_records() -> dict[str, int]:
+    """Delete all storage rows while keeping schema and extensions intact."""
+    if not storage_configured():
+        return {"encrypted_records": 0, "semantic_memories": 0}
+    _require_psycopg()
+
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            semantic_deleted = 0
+            if _semantic_memory_index_exists(cur):
+                cur.execute("DELETE FROM semantic_memories")
+                semantic_deleted = cur.rowcount
+            cur.execute("DELETE FROM encrypted_records")
+            encrypted_deleted = cur.rowcount
+        conn.commit()
+    return {
+        "encrypted_records": encrypted_deleted,
+        "semantic_memories": semantic_deleted,
+    }
+
+
 def upsert_record(
     record_type: str,
     *,
@@ -362,6 +587,18 @@ def safe_store_calendar_event(event: Any, *, source: str = "calendar") -> None:
     _enqueue(store_calendar_event, event, source=source)
 
 
+def safe_store_pii_mappings(email_id: str, purpose: str, mappings: list[Any]) -> None:
+    _enqueue(store_pii_mappings, email_id, purpose, mappings)
+
+
+def safe_store_thread_state(thread_id: str, payload: dict[str, Any]) -> None:
+    _enqueue(store_thread_state, thread_id, payload)
+
+
+def safe_store_semantic_memory(**kwargs: Any) -> None:
+    _enqueue(store_semantic_memory, **kwargs)
+
+
 def safe_record_event(
     event_type: str,
     payload: dict[str, Any],
@@ -411,6 +648,77 @@ def _enqueue(func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
     if writer is None:
         return
     writer.enqueue(func, *args, **kwargs)
+
+
+def _init_pgvector() -> None:
+    """Initialize optional pgvector structures without breaking plain Postgres."""
+    try:
+        with psycopg.connect(_database_url()) as conn:
+            with conn.cursor() as cur:
+                cur.execute(PGVECTOR_SQL)
+            conn.commit()
+    except Exception as exc:
+        log.warning(
+            "pgvector_unavailable",
+            extra={"storage_enabled": True, "error": str(exc)},
+        )
+
+
+def _upsert_semantic_memory_index(
+    *,
+    memory_type: str,
+    subject_id: str,
+    summary: str,
+    email_id: str | None,
+    thread_id: str | None,
+    embedding: list[float] | None,
+    metadata: dict[str, Any],
+) -> None:
+    if not storage_configured():
+        return
+    try:
+        with psycopg.connect(_database_url()) as conn:
+            with conn.cursor() as cur:
+                if not _semantic_memory_index_exists(cur):
+                    return
+                cur.execute(
+                    """
+                    INSERT INTO semantic_memories (
+                        id, memory_type, subject_id, email_id, thread_id,
+                        summary, embedding, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (memory_type, subject_id)
+                    DO UPDATE SET
+                        email_id = EXCLUDED.email_id,
+                        thread_id = EXCLUDED.thread_id,
+                        summary = EXCLUDED.summary,
+                        embedding = EXCLUDED.embedding,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = NOW()
+                    """,
+                    (
+                        str(uuid4()),
+                        memory_type,
+                        subject_id,
+                        email_id,
+                        thread_id,
+                        summary,
+                        embedding,
+                        Jsonb(metadata),
+                    ),
+                )
+            conn.commit()
+    except Exception:
+        log.exception(
+            "semantic_memory_index_failed",
+            extra={"storage_enabled": True, "storage_event": memory_type},
+        )
+
+
+def _semantic_memory_index_exists(cur: Any) -> bool:
+    cur.execute("SELECT to_regclass('public.semantic_memories')")
+    return cur.fetchone()[0] is not None
 
 
 def _require_psycopg() -> None:

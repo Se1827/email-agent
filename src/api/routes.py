@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from src.config import get_settings
 from src.connectors.mock import load_emails as load_mock_emails
@@ -13,7 +13,19 @@ from src.connectors.imap import fetch_emails as fetch_imap_emails
 from src.models.email import CalendarEvent, Classification, DraftReply, Email
 from src.services import classifier, drafter
 from src.services.calendar import get_upcoming_events, load_events
-from src.storage import safe_record_event, safe_store_calendar_event, safe_store_email
+from src.services.pii import PrivacyGateway
+from src.storage import (
+    delete_all_storage_records,
+    delete_email_records,
+    load_email_state,
+    safe_record_event,
+    safe_store_calendar_event,
+    safe_store_email,
+    safe_store_semantic_memory,
+    safe_store_thread_state,
+    storage_stats,
+    store_email,
+)
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +59,10 @@ def _ensure_loaded() -> None:
         try:
             source = get_settings().email_source
             for email in _load_email_source():
+                _hydrate_email_state(email)
                 _emails[email.id] = email
                 safe_store_email(email, source=source)
+                _store_email_memory(email)
         except Exception as exc:
             log.error("email_load_failed", extra={"error": str(exc)})
             raise HTTPException(
@@ -76,6 +90,76 @@ def _relevant_events(email: Email) -> list[CalendarEvent]:
     return get_upcoming_events(_calendar, email.timestamp)
 
 
+def _hydrate_email_state(email: Email) -> None:
+    """Apply cached workflow state from encrypted storage onto source emails."""
+    stored = load_email_state(email.id)
+    if not stored:
+        return
+    try:
+        cached = Email.model_validate(stored)
+    except Exception:
+        log.exception("email_cache_hydration_failed", extra={"email_id": email.id})
+        return
+    email.classification = cached.classification
+    email.draft_reply = cached.draft_reply
+
+
+def _persist_email_state(email: Email, *, source: str = "workflow") -> None:
+    """Persist the latest email workflow state immediately and via audit records."""
+    try:
+        store_email(email, source=source)
+    except Exception:
+        log.exception("email_state_persist_failed", extra={"email_id": email.id})
+    _store_thread_state(email)
+    _store_email_memory(email)
+
+
+def _store_thread_state(email: Email) -> None:
+    classification = email.classification
+    participants = sorted({email.sender, *email.recipients})
+    thread_id = email.thread_id or email.id
+    pending_action = "reply_or_follow_up" if classification and classification.priority.value in {"critical", "high"} else None
+    payload = {
+        "thread_id": thread_id,
+        "last_email_id": email.id,
+        "participants": participants,
+        "topic": email.subject,
+        "priority": classification.priority.value if classification else None,
+        "category": classification.category.value if classification else None,
+        "last_sentiment": _sentiment_hint(email.body),
+        "pending_action": pending_action,
+        "has_draft": email.draft_reply is not None,
+        "updated_from": "api",
+    }
+    safe_store_thread_state(thread_id, payload)
+
+
+def _store_email_memory(email: Email) -> None:
+    compact_body = " ".join(email.body.split())[:500]
+    summary = PrivacyGateway().mask_text(compact_body).text
+    safe_store_semantic_memory(
+        memory_type="email_summary",
+        subject_id=email.id,
+        email_id=email.id,
+        thread_id=email.thread_id or email.id,
+        summary=summary,
+        metadata={
+            "subject_chars": len(email.subject),
+            "has_classification": email.classification is not None,
+            "has_draft": email.draft_reply is not None,
+        },
+    )
+
+
+def _sentiment_hint(text: str) -> str:
+    lowered = text.lower()
+    if any(word in lowered for word in ("urgent", "frustrated", "blocked", "escalat", "asap")):
+        return "urgent"
+    if any(word in lowered for word in ("thanks", "appreciate", "great", "happy")):
+        return "positive"
+    return "neutral"
+
+
 # ---- Endpoints -------------------------------------------------------------
 
 
@@ -93,9 +177,19 @@ async def get_email(email_id: str) -> dict[str, Any]:
 
 
 @router.post("/emails/{email_id}/classify")
-async def classify_email(email_id: str) -> dict[str, Any]:
+async def classify_email(
+    email_id: str,
+    force: bool = Query(False, description="Re-run the model even if cached"),
+) -> dict[str, Any]:
     """Classify an email by priority and category."""
     email = _get_email(email_id)
+    if email.classification is not None and not force:
+        safe_record_event(
+            "email.classification_cache_hit",
+            {"classification": email.classification.model_dump(mode="json")},
+            subject_id=email.id,
+        )
+        return email.classification.model_dump(mode="json")
     result = await classifier.classify(email, _relevant_events(email))
     email.classification = result
     safe_record_event(
@@ -107,11 +201,15 @@ async def classify_email(email_id: str) -> dict[str, Any]:
         },
         subject_id=email.id,
     )
+    _persist_email_state(email)
     return result.model_dump(mode="json")
 
 
 @router.post("/emails/{email_id}/draft")
-async def draft_email_reply(email_id: str) -> dict[str, Any]:
+async def draft_email_reply(
+    email_id: str,
+    force: bool = Query(False, description="Re-run the model even if cached"),
+) -> dict[str, Any]:
     """Generate a draft reply for an email.
 
     The email must be classified first.
@@ -122,6 +220,13 @@ async def draft_email_reply(email_id: str) -> dict[str, Any]:
             status_code=400,
             detail="Classify the email before drafting a reply.",
         )
+    if email.draft_reply is not None and not force:
+        safe_record_event(
+            "email.draft_cache_hit",
+            {"draft_reply": email.draft_reply.model_dump(mode="json")},
+            subject_id=email.id,
+        )
+        return email.draft_reply.model_dump(mode="json")
     result = await drafter.draft_reply(
         email, email.classification, _relevant_events(email)
     )
@@ -136,6 +241,7 @@ async def draft_email_reply(email_id: str) -> dict[str, Any]:
         },
         subject_id=email.id,
     )
+    _persist_email_state(email)
     return result.model_dump(mode="json")
 
 
@@ -157,6 +263,7 @@ async def approve_draft(email_id: str) -> dict[str, str]:
     )
     # In a real system, this would send the email.
     email.draft_reply = None
+    _persist_email_state(email)
     return {"status": "sent", "preview": body_preview}
 
 
@@ -182,6 +289,7 @@ async def classify_all() -> list[dict[str, Any]]:
                 "email_id": email.id,
                 "classification": result.model_dump(mode="json"),
             })
+            _persist_email_state(email)
     return results
 
 
@@ -201,4 +309,30 @@ async def refresh_emails() -> dict[str, Any]:
     _emails.clear()
     _ensure_loaded()
     return {"status": "refreshed", "count": len(_emails)}
+
+
+@router.get("/storage/stats")
+async def get_storage_stats() -> dict[str, Any]:
+    """Return current storage row counts."""
+    return storage_stats()
+
+
+@router.delete("/storage/emails/{email_id}")
+async def wipe_email_storage(email_id: str) -> dict[str, Any]:
+    """Delete storage rows for one email and reset in-memory state."""
+    deleted = delete_email_records(email_id)
+    if email_id in _emails:
+        _emails[email_id].classification = None
+        _emails[email_id].draft_reply = None
+    return {"status": "deleted", "email_id": email_id, "deleted": deleted}
+
+
+@router.delete("/storage")
+async def wipe_all_storage() -> dict[str, Any]:
+    """Delete all storage rows and reset in-memory workflow state."""
+    deleted = delete_all_storage_records()
+    for email in _emails.values():
+        email.classification = None
+        email.draft_reply = None
+    return {"status": "deleted", "deleted": deleted}
 

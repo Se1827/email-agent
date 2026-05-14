@@ -14,6 +14,7 @@ from src.models.email import (
 )
 from src.services.calendar import format_calendar_context
 from src.services.pii import PrivacyGateway, redact
+from src.storage import safe_store_pii_mappings
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ async def draft_reply(
         pii_redacted=result.was_redacted,
         redacted_types=pii_types,
     )
+    safe_store_pii_mappings(email.id, "draft", privacy.mappings)
 
     log.info(
         "draft_generated",
