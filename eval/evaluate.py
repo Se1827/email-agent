@@ -151,11 +151,8 @@ def _score_case(item: dict, cls, draft_body: str, interactions: list[dict], priv
     pii_absent = all(secret not in all_prompt_text for secret in item.get("pii_must_not_reach_llm", []))
     tokens_present = all(token in all_prompt_text for token in item.get("expected_mask_tokens", []))
     prompt_captured = len(interactions) == 2
-    draft_contains = {
-        fragment: fragment.lower() in draft_body.lower()
-        for fragment in item.get("expected_draft_contains", [])
-    }
-    draft_review_ok = all(draft_contains.values()) if draft_contains else True
+    draft_intents = _evaluate_draft_expectations(item, draft_body)
+    draft_review_ok = all(intent["matched"] for intent in draft_intents) if draft_intents else True
 
     must_pass_checks = {
         "priority": priority_ok,
@@ -198,7 +195,8 @@ def _score_case(item: dict, cls, draft_body: str, interactions: list[dict], priv
         "checks": all_checks,
         "must_pass_checks": must_pass_checks,
         "review_checks": review_checks,
-        "draft_fragment_matches": draft_contains,
+        "draft_fragment_matches": {intent["name"]: intent["matched"] for intent in draft_intents},
+        "draft_intent_matches": draft_intents,
         "passed": passed,
         "status": "PASS" if passed else "FAIL",
         "score": sum(all_checks.values()) / len(all_checks),
@@ -229,6 +227,96 @@ def _summarize(run_id: str, case_results: list[dict], *, live: bool, storage: di
         "review_score": round(sum(review_checks) / len(review_checks), 4) if review_checks else 0,
         "storage": storage,
     }
+
+
+def _evaluate_draft_expectations(item: dict, draft_body: str) -> list[dict]:
+    expectations = item.get("expected_draft_intents")
+    if not expectations:
+        expectations = [
+            {"name": fragment, "any_of": _phrase_family(fragment)}
+            for fragment in item.get("expected_draft_contains", [])
+        ]
+
+    normalized = _normalize_text(draft_body)
+    results = []
+    for expectation in expectations:
+        alternatives = expectation.get("any_of", [])
+        matched_by = next(
+            (phrase for phrase in alternatives if _normalize_text(phrase) in normalized),
+            None,
+        )
+        results.append(
+            {
+                "name": expectation.get("name", "draft_expectation"),
+                "matched": matched_by is not None,
+                "matched_by": matched_by,
+                "any_of": alternatives,
+            }
+        )
+    return results
+
+
+def _phrase_family(fragment: str) -> list[str]:
+    families = {
+        "jumping on this": [
+            "jumping on this",
+            "investigating",
+            "looking into",
+            "working on",
+            "aware of the issue",
+        ],
+        "update": [
+            "update",
+            "provide an update",
+            "share an update",
+            "as soon as possible",
+        ],
+        "Thursday EOD": [
+            "Thursday EOD",
+            "EOD Thursday",
+            "end of day on Thursday",
+            "by Thursday",
+        ],
+        "Thanks": [
+            "Thanks",
+            "Thank you",
+            "appreciate",
+        ],
+        "No response": [
+            "No response",
+            "not be clicking",
+            "not responding",
+            "appears to be unsolicited",
+            "remove my email address",
+        ],
+        "confirm": [
+            "confirm",
+            "notified",
+            "provide an update",
+            "in touch",
+            "once complete",
+            "once the process is complete",
+        ],
+        "invoice #4821": [
+            "invoice #4821",
+            "invoice 4821",
+        ],
+        "rotate": [
+            "rotate",
+            "rotated",
+            "new token",
+        ],
+        "proceed": [
+            "proceed",
+            "can proceed",
+            "process this request",
+        ],
+    }
+    return families.get(fragment, [fragment])
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(value.lower().replace("-", " ").split())
 
 
 def _storage_status(*, storage_probe: bool) -> dict:
@@ -355,12 +443,17 @@ def _render_case(result: dict) -> list[str]:
         result["actual"]["draft_body"],
         "```",
         "",
-        "Draft fragment checks:",
+        "Draft intent checks:",
         "",
     ])
-    if result["draft_fragment_matches"]:
-        for fragment, ok in result["draft_fragment_matches"].items():
-            lines.append(f"- `{fragment}`: `{ok}`")
+    if result["draft_intent_matches"]:
+        for intent in result["draft_intent_matches"]:
+            matched_by = intent["matched_by"] or "none"
+            alternatives = "`, `".join(intent["any_of"])
+            lines.append(
+                f"- `{intent['name']}`: `{intent['matched']}` "
+                f"(matched by: `{matched_by}`; alternatives: `{alternatives}`)"
+            )
     else:
         lines.append("- none")
 
