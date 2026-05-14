@@ -1,6 +1,6 @@
 """Tests for the PII redaction module."""
 
-from src.services.pii import redact
+from src.services.pii import PrivacyGateway, redact, rehydrate
 
 
 class TestCreditCard:
@@ -57,3 +57,30 @@ class TestNoRedaction:
         assert result.text == text
         assert not result.was_redacted
         assert result.found_types == []
+
+
+class TestPrivacyGateway:
+    def test_semantic_tokens_are_rehydratable(self):
+        gateway = PrivacyGateway()
+        result = gateway.mask_text(
+            "Email jane.doe@example.com or call 415-555-0134 about account 9283-7461-0023."
+        )
+
+        assert "[[EMAIL_ADDRESS_1]]" in result.text
+        assert "[[PHONE_NUMBER_1]]" in result.text
+        assert "[[BANK_ACCOUNT_1]]" in result.text
+        assert "jane.doe@example.com" not in result.text
+        assert gateway.rehydrate_text(result.text).startswith("Email jane.doe@example.com")
+
+    def test_repeated_values_keep_same_token(self):
+        gateway = PrivacyGateway()
+        result = gateway.mask_text("Use jane@example.com and jane@example.com.")
+
+        assert result.text.count("[[EMAIL_ADDRESS_1]]") == 2
+        assert len(gateway.mappings) == 1
+
+    def test_rehydrate_with_explicit_mappings(self):
+        gateway = PrivacyGateway()
+        result = gateway.mask_text("SSN: 123-45-6789")
+
+        assert rehydrate(result.text, result.mappings) == "SSN: 123-45-6789"

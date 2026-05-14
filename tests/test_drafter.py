@@ -61,3 +61,30 @@ class TestDraftReply:
         assert "123-45-6789" not in result.body
         assert result.pii_redacted is True
         assert "ssn" in result.redacted_types
+
+    @pytest.mark.asyncio
+    async def test_draft_masks_prompt_and_rehydrates_known_values(
+        self, sample_classification, monkeypatch
+    ):
+        email = Email(
+            id="test-003",
+            sender="alice@example.com",
+            recipients=["bob@example.com"],
+            subject="Payment help",
+            body="Please confirm card 4111-1111-1111-1111 was removed.",
+            timestamp="2026-05-07T10:00:00+05:30",
+        )
+        captured = {}
+
+        async def mock_chat(messages, **kwargs):
+            captured["prompt"] = messages[-1]["content"]
+            return "I confirm that [[CREDIT_CARD_1]] was removed from the account."
+
+        monkeypatch.setattr("src.services.drafter.llm.chat", mock_chat)
+
+        result = await draft_reply(email, sample_classification)
+
+        assert "4111-1111-1111-1111" not in captured["prompt"]
+        assert "[[CREDIT_CARD_1]]" in captured["prompt"]
+        assert "4111-1111-1111-1111" in result.body
+        assert "[[CREDIT_CARD_1]]" not in result.body

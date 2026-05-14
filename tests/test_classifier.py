@@ -71,3 +71,28 @@ class TestClassify:
         result = await classify(sample_email)
         assert result.priority == Priority.HIGH
         assert result.category == Category.DEADLINE
+
+    @pytest.mark.asyncio
+    async def test_classify_masks_pii_before_llm(self, monkeypatch):
+        email = Email(
+            id="test-pii",
+            sender="alice@example.com",
+            recipients=["bob@example.com"],
+            subject="Account question",
+            body="My SSN is 123-45-6789 and my card is 4111-1111-1111-1111.",
+            timestamp="2026-05-07T10:00:00+05:30",
+        )
+        captured = {}
+
+        async def mock_chat(messages, **kwargs):
+            captured["prompt"] = messages[-1]["content"]
+            return MOCK_CLASSIFICATION_JSON
+
+        monkeypatch.setattr("src.services.classifier.llm.chat", mock_chat)
+
+        await classify(email)
+
+        assert "123-45-6789" not in captured["prompt"]
+        assert "4111-1111-1111-1111" not in captured["prompt"]
+        assert "[[US_SSN_1]]" in captured["prompt"]
+        assert "[[CREDIT_CARD_1]]" in captured["prompt"]

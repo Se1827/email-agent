@@ -51,7 +51,7 @@ src/
     classifier.py      – priority + category via LLM
     drafter.py         – context-aware reply via LLM
     calendar.py        – mock calendar context
-    pii.py             – regex PII redactor
+    pii.py             – Presidio/spaCy privacy gateway + semantic masking
   api/
     app.py             – FastAPI factory
     routes.py          – API endpoints

@@ -9,6 +9,7 @@ from src.llm import client as llm
 from src.llm.prompts import CLASSIFY_SYSTEM, CLASSIFY_USER
 from src.models.email import CalendarEvent, Classification, Email
 from src.services.calendar import format_calendar_context
+from src.services.pii import PrivacyGateway
 
 log = logging.getLogger(__name__)
 
@@ -22,15 +23,16 @@ async def classify(
     Sends the email contents (plus optional calendar context) to the LLM
     and parses the structured JSON response into a ``Classification``.
     """
+    privacy = PrivacyGateway()
     cal_ctx = format_calendar_context(calendar_events or [])
 
     user_msg = CLASSIFY_USER.format(
-        sender=email.sender,
-        recipients=", ".join(email.recipients),
+        sender=privacy.mask_text(email.sender).text,
+        recipients=privacy.mask_text(", ".join(email.recipients)).text,
         timestamp=email.timestamp.isoformat(),
-        subject=email.subject,
-        body=email.body,
-        calendar_context=cal_ctx,
+        subject=privacy.mask_text(email.subject).text,
+        body=privacy.mask_text(email.body).text,
+        calendar_context=privacy.mask_text(cal_ctx).text,
     )
 
     raw = await llm.chat(
@@ -48,6 +50,8 @@ async def classify(
             "email_id": email.id,
             "priority": parsed.priority.value,
             "category": parsed.category.value,
+            "pii_masked": bool(privacy.mappings),
+            "pii_types": sorted({mapping.entity_type.lower() for mapping in privacy.mappings}),
         },
     )
     return parsed
