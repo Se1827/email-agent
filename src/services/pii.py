@@ -1,9 +1,9 @@
 """Local PII gateway for semantic masking and safe rehydration.
 
-The gateway prefers Microsoft Presidio plus spaCy when those libraries are
-installed, and always keeps a focused regex layer as a fast local fallback.
-It masks only high-signal sensitive values, preserving enough email context
-for classification and drafting.
+The fast path is regex-only because that covers the practical PII we most
+often see in email: addresses, cards, SSNs, phones, bank details, and secrets.
+Presidio/spaCy are loaded lazily only when the text has cues for semantic PII
+such as named people in sensitive contexts.
 """
 
 from __future__ import annotations
@@ -39,6 +39,15 @@ SUPPORTED_ENTITIES = [
     "ROUTING_NUMBER",
     "API_KEY",
 ]
+
+_SEMANTIC_ENTITIES = ["PERSON"]
+_SEMANTIC_CONTEXT_RE = re.compile(
+    r"\b("
+    r"my name is|contact person|point of contact|customer|client|patient|"
+    r"employee|candidate|passport|account holder|named|full name|legal name"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -131,10 +140,11 @@ _REGEX_RULES = [
 class PrivacyGateway:
     """Detect, mask, and rehydrate PII without sending raw values to the LLM."""
 
-    def __init__(self, *, language: str = "en") -> None:
+    def __init__(self, *, language: str = "en", semantic_detection: bool = True) -> None:
         self.language = language
-        self._analyzer = _get_presidio_analyzer(language)
-        self._nlp = _get_spacy_pipeline(language)
+        self.semantic_detection = semantic_detection
+        self._analyzer = None
+        self._nlp = None
         self._counters: dict[str, int] = {}
         self._original_to_token: dict[tuple[str, str], str] = {}
         self._mappings: dict[str, MaskMapping] = {}
@@ -179,7 +189,14 @@ class PrivacyGateway:
 
     def _detect(self, text: str) -> list[PiiFinding]:
         findings = self._detect_with_regex(text)
-        findings.extend(self._detect_with_presidio(text))
+        if not self.semantic_detection or not self._should_run_semantic_detection(text):
+            return findings
+
+        semantic_findings = self._detect_with_presidio(text)
+        if semantic_findings:
+            findings.extend(semantic_findings)
+            return findings
+
         findings.extend(self._detect_with_spacy(text))
         return findings
 
@@ -197,13 +214,14 @@ class PrivacyGateway:
         return findings
 
     def _detect_with_presidio(self, text: str) -> list[PiiFinding]:
-        if self._analyzer is None:
+        analyzer = self._get_analyzer()
+        if analyzer is None:
             return []
         try:
-            results = self._analyzer.analyze(
+            results = analyzer.analyze(
                 text=text,
                 language=self.language,
-                entities=SUPPORTED_ENTITIES,
+                entities=_SEMANTIC_ENTITIES,
             )
         except Exception:
             return []
@@ -214,10 +232,11 @@ class PrivacyGateway:
         ]
 
     def _detect_with_spacy(self, text: str) -> list[PiiFinding]:
-        if self._nlp is None:
+        nlp = self._get_nlp()
+        if nlp is None:
             return []
         try:
-            doc = self._nlp(text)
+            doc = nlp(text)
         except Exception:
             return []
 
@@ -230,6 +249,16 @@ class PrivacyGateway:
                         PiiFinding(ent.start_char, ent.end_char, entity_type, 0.65, "spacy")
                     )
         return findings
+
+    def _get_analyzer(self):
+        if self._analyzer is None:
+            self._analyzer = _get_presidio_analyzer(self.language)
+        return self._analyzer
+
+    def _get_nlp(self):
+        if self._nlp is None:
+            self._nlp = _get_spacy_pipeline(self.language)
+        return self._nlp
 
     def _token_for(self, entity_type: str, original: str) -> str:
         key = (entity_type, original)
@@ -248,7 +277,8 @@ class PrivacyGateway:
         window = text[max(0, start - 40): min(len(text), end + 40)].lower()
         context_markers = (
             "my name is",
-            "contact",
+            "contact person",
+            "point of contact",
             "customer",
             "client",
             "patient",
@@ -258,6 +288,10 @@ class PrivacyGateway:
             "account holder",
         )
         return any(marker in window for marker in context_markers)
+
+    @staticmethod
+    def _should_run_semantic_detection(text: str) -> bool:
+        return bool(_SEMANTIC_CONTEXT_RE.search(text))
 
     @staticmethod
     def _resolve_overlaps(findings: Iterable[PiiFinding]) -> list[PiiFinding]:

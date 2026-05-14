@@ -60,6 +60,14 @@ class TestNoRedaction:
 
 
 class TestPrivacyGateway:
+    def test_regex_fast_path_does_not_initialize_nlp(self):
+        gateway = PrivacyGateway()
+        result = gateway.mask_text("Email jane.doe@example.com with card 4111-1111-1111-1111.")
+
+        assert result.was_redacted
+        assert gateway._analyzer is None
+        assert gateway._nlp is None
+
     def test_semantic_tokens_are_rehydratable(self):
         gateway = PrivacyGateway()
         result = gateway.mask_text(
