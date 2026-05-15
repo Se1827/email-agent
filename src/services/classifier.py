@@ -285,30 +285,72 @@ def filter_relevant_events(
     return relevant
 
 
-def _format_relevant_context(events: list[CalendarEvent]) -> str:
-    """Format only relevant events for the prompt, or a clear 'none' message."""
+def _format_relevant_context(
+    events: list[CalendarEvent],
+    candidate_start: datetime | None = None,
+    candidate_end: datetime | None = None,
+) -> str:
+    """Format relevant events for the prompt with explicit conflict/free labels.
+
+    If candidate_start is provided, each event is labelled CONFLICT or free
+    so the LLM does not have to infer availability.
+    """
     if not events:
-        return "--- Calendar context ---\nNo relevant calendar events for this email."
+        return "--- Calendar context ---\nYou have no relevant calendar events. You are free."
+
+    if candidate_start is not None:
+        cand_s = _wall_clock(candidate_start)
+        cand_e = _wall_clock(candidate_end) if candidate_end else cand_s + timedelta(hours=1)
+    else:
+        cand_s = cand_e = None
 
     lines = ["--- Calendar context (events related to this email) ---"]
+    any_conflict = False
     for ev in events:
         date_str = ev.start.strftime("%a %b %d, %H:%M")
         end_str = ev.end.strftime("%H:%M") if ev.end and ev.end != ev.start else ""
-        time_display = "All day" if ev.is_all_day else f"{date_str}–{end_str}" if end_str else date_str
+        time_display = "All day" if ev.is_all_day else f"{date_str}\u2013{end_str}" if end_str else date_str
         attendees = ", ".join(ev.attendees) if ev.attendees else "just you"
         location = f" @ {ev.location}" if ev.location else ""
-        lines.append(f"  - {ev.title}: {time_display}{location} (with {attendees})")
+
+        if cand_s is not None:
+            ev_s = _wall_clock(ev.start)
+            ev_e = _wall_clock(ev.end) if ev.end else ev_s + timedelta(hours=1)
+            same_day = ev_s.date() == cand_s.date()
+            if ev.is_all_day and same_day:
+                label = " [CONFLICT: all-day event]"
+                any_conflict = True
+            elif same_day and cand_s < ev_e and ev_s < cand_e:
+                label = " [CONFLICT: time overlaps]"
+                any_conflict = True
+            else:
+                label = " [no conflict]"
+        else:
+            label = ""
+
+        lines.append(f"  - {ev.title}: {time_display}{location} (with {attendees}){label}")
         if ev.description:
             lines.append(f"    Note: {ev.description[:100]}")
+
+    if cand_s is not None:
+        if any_conflict:
+            lines.append("AVAILABILITY: You are NOT free at the requested time.")
+        else:
+            lines.append("AVAILABILITY: You ARE free at the requested time.")
     return "\n".join(lines)
 
 
-# ── Conflict detection ────────────────────────────────────────────────────
+def _wall_clock(dt: datetime) -> datetime:
+    """Strip timezone info to get the local wall-clock time as a naive datetime.
 
-def _as_utc(dt: datetime) -> datetime:
-    """Return a timezone-aware datetime, assuming UTC if naive."""
-    from datetime import timezone
-    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    This is intentional: calendar events from calendar.json are stored in
+    local time (e.g. 16:00+05:30) and emails produce naive datetimes from
+    natural-language extraction (e.g. "4pm" → 16:00 naive). Converting both
+    to UTC would shift them apart (10:30 vs 16:00). Instead we compare them
+    as wall-clock times — "4pm is 4pm" regardless of what timezone the
+    calendar file happens to store.
+    """
+    return dt.replace(tzinfo=None)
 
 
 def has_calendar_conflict(
@@ -317,25 +359,36 @@ def has_calendar_conflict(
 ) -> CalendarEvent | None:
     """Return the first existing event that conflicts with the candidate.
 
-    Conflict = same day AND time ranges overlap (or both are all-day).
-    Returns None if no conflict found.
+    Conflict = same calendar date AND wall-clock time ranges overlap
+    (or either event is all-day).
+
+    We compare wall-clock times (tzinfo stripped) because:
+    - Existing events: stored as local time with offset, e.g. 16:00+05:30
+    - Candidate events: extracted from email text as naive, e.g. 16:00
+    - UTC-normalizing these gives 10:30 vs 16:00 → false "no conflict"
     """
-    candidate_start = _as_utc(candidate.start)
-    candidate_end = _as_utc(candidate.end) if candidate.end else candidate_start + timedelta(hours=1)
+    candidate_start = _wall_clock(candidate.start)
+    candidate_end = (
+        _wall_clock(candidate.end) if candidate.end
+        else candidate_start + timedelta(hours=1)
+    )
+    candidate_date = candidate_start.date()
 
     for event in existing_events:
-        # Skip auto-generated events with the same source email — already checked upstream
         if event.id == candidate.id:
             continue
 
-        event_start = _as_utc(event.start)
-        event_end = _as_utc(event.end) if event.end else event_start + timedelta(hours=1)
+        event_start = _wall_clock(event.start)
+        event_end = (
+            _wall_clock(event.end) if event.end
+            else event_start + timedelta(hours=1)
+        )
 
-        # Must be on the same calendar date
-        if event_start.date() != candidate_start.date():
+        # Must be same calendar date
+        if event_start.date() != candidate_date:
             continue
 
-        # All-day events conflict with anything on the same day
+        # All-day events block the entire day
         if event.is_all_day or candidate.is_all_day:
             log.info(
                 "calendar_conflict_detected",
@@ -348,8 +401,7 @@ def has_calendar_conflict(
             )
             return event
 
-        # Timed events: overlap when one starts before the other ends
-        # (standard interval overlap: start_A < end_B AND start_B < end_A)
+        # Timed overlap: start_A < end_B AND start_B < end_A
         if candidate_start < event_end and event_start < candidate_end:
             log.info(
                 "calendar_conflict_detected",
@@ -365,7 +417,6 @@ def has_calendar_conflict(
             return event
 
     return None
-
 
 # ── Auto-event creation from meeting emails ───────────────────────────────
 
@@ -445,7 +496,19 @@ async def classify(
     privacy = PrivacyGateway()
 
     relevant_events = filter_relevant_events(email, calendar_events or [])
-    cal_ctx = _format_relevant_context(relevant_events)
+
+    # Extract candidate time from email so context shows CONFLICT/free labels
+    clean_body = _strip_quoted_text(email.body)
+    _cand_dates = _extract_dates_from_text(f"{email.subject} {clean_body}", email.timestamp)
+    _cand_time  = _extract_time_from_text(f"{email.subject} {clean_body}")
+    if _cand_dates and _cand_time:
+        _cs = _cand_dates[0].replace(hour=_cand_time[0], minute=_cand_time[1])
+        _ce = _cs + timedelta(hours=1)
+    elif _cand_dates:
+        _cs, _ce = _cand_dates[0], None
+    else:
+        _cs, _ce = None, None
+    cal_ctx = _format_relevant_context(relevant_events, _cs, _ce)
 
     user_msg = CLASSIFY_USER.format(
         sender=privacy.mask_text(email.sender).text,
