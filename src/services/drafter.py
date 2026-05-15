@@ -1,12 +1,9 @@
-"""Draft reply service — generates context-aware email replies via LLM.
-
-Uses LangChain ChatGroq with quality-aware prompting and smart calendar
-context filtering. Only relevant calendar events are injected.
-"""
+"""Draft reply service — generates context-aware email replies via LLM."""
 
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from src.llm import client as llm
 from src.llm.prompts import (
@@ -20,7 +17,13 @@ from src.models.email import (
     DraftReply,
     Email,
 )
-from src.services.classifier import filter_relevant_events, _format_relevant_context
+from src.services.classifier import (
+    filter_relevant_events,
+    _format_relevant_context,
+    _strip_quoted_text,
+    _extract_dates_from_text,
+    _extract_time_from_text,
+)
 from src.services.pii import PrivacyGateway, redact
 from src.storage import safe_store_pii_mappings
 
@@ -34,24 +37,28 @@ async def draft_reply(
     *,
     quality: str = "balanced",
 ) -> DraftReply:
-    """Generate a reply draft for the given email.
-
-    The original email is masked before it reaches the LLM. If the model uses
-    semantic placeholders in its answer, only those known local values are
-    rehydrated before user review.
-
-    Quality levels:
-      - "quick":    fast, 2-3 sentence reply (temp=0.3, 300 tokens)
-      - "balanced": standard helpful reply (temp=0.4, 600 tokens)
-      - "thorough": comprehensive detailed reply (temp=0.5, 1024 tokens)
-    """
+    """Generate a reply draft for the given email."""
     privacy = PrivacyGateway()
 
-    # Smart filter: only inject relevant events (same logic as classifier)
     relevant_events = filter_relevant_events(email, calendar_events or [])
-    cal_ctx = _format_relevant_context(relevant_events)
 
-    # Select quality-appropriate template and LLM params
+    # Extract the time the sender is proposing so the LLM gets an explicit
+    # CONFLICT / free label rather than having to guess from raw event data.
+    clean_body = _strip_quoted_text(email.body)
+    text = f"{email.subject} {clean_body}"
+    cand_dates = _extract_dates_from_text(text, email.timestamp)
+    cand_time  = _extract_time_from_text(text)
+
+    if cand_dates and cand_time:
+        cand_start = cand_dates[0].replace(hour=cand_time[0], minute=cand_time[1])
+        cand_end   = cand_start + timedelta(hours=1)
+    elif cand_dates:
+        cand_start, cand_end = cand_dates[0], None
+    else:
+        cand_start = cand_end = None
+
+    cal_ctx = _format_relevant_context(relevant_events, cand_start, cand_end)
+
     quality = quality if quality in DRAFT_USER_TEMPLATES else "balanced"
     template = DRAFT_USER_TEMPLATES[quality]
     temperature, max_tokens = DRAFT_QUALITY_PARAMS[quality]
@@ -97,6 +104,9 @@ async def draft_reply(
             "max_tokens": max_tokens,
             "relevant_events": len(relevant_events),
             "pii_redacted": draft.pii_redacted,
+            "conflict_detected": cand_start is not None and any(
+                "[CONFLICT" in line for line in cal_ctx.splitlines()
+            ),
         },
     )
     return draft
