@@ -10,6 +10,7 @@ from src.llm.prompts import CLASSIFY_SYSTEM, CLASSIFY_USER
 from src.models.email import CalendarEvent, Classification, Email
 from src.services.calendar import format_calendar_context
 from src.services.pii import PrivacyGateway
+from src.storage import safe_store_pii_mappings
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ async def classify(
     )
 
     parsed = _parse_classification(raw)
+    safe_store_pii_mappings(email.id, "classification", privacy.mappings)
     log.info(
         "classified",
         extra={
