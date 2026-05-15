@@ -1,0 +1,18 @@
+[
+    {
+        "id": "work-primary",
+        "name": "Work",
+        "email": "you@company.com",
+        "provider": "mock",
+        "color": "#3b82f6",
+        "is_active": true
+    },
+    {
+        "id": "personal",
+        "name": "Personal",
+        "email": "you@gmail.com",
+        "provider": "mock",
+        "color": "#8b5cf6",
+        "is_active": false
+    }
+]

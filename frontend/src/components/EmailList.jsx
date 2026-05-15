@@ -1,18 +1,17 @@
-import { formatDate, formatSender } from '../utils';
+import { Star } from 'lucide-react';
+import { formatDate, formatSender, senderColor } from '../utils';
+import { toggleStar, fetchEmail } from '../api';
 import './EmailList.css';
-
-const PRIORITY_LABELS = {
-    critical: 'CRT',
-    high: 'HI',
-    normal: 'NRM',
-    low: 'LO',
-};
 
 function EmailList({ emails, selected, onSelect, loading }) {
     if (loading) {
         return (
             <div className="email-list">
-                <div className="email-list-empty">Loading emails...</div>
+                <div className="email-list-loading">
+                    {[1,2,3,4,5].map(i => (
+                        <div key={i} className="email-row-skeleton shimmer-bg" />
+                    ))}
+                </div>
             </div>
         );
     }
@@ -25,8 +24,17 @@ function EmailList({ emails, selected, onSelect, loading }) {
         );
     }
 
+    const handleStar = async (e, email) => {
+        e.stopPropagation();
+        try {
+            await toggleStar(email.id);
+            const updated = await fetchEmail(email.id);
+            onSelect(selected?.id === email.id ? updated : selected);
+        } catch (_) { /* ignore */ }
+    };
+
     return (
-        <div className="email-list">
+        <div className="email-list" id="email-list">
             <div className="email-list-header">
                 <span className="email-list-count">{emails.length} emails</span>
             </div>
@@ -34,37 +42,49 @@ function EmailList({ emails, selected, onSelect, loading }) {
                 {emails.map((email) => {
                     const cls = email.classification;
                     const isSelected = selected?.id === email.id;
-                    const isRead = !!cls;
+                    const isUnread = !email.is_read && !cls;
 
                     return (
                         <div
                             key={email.id}
-                            className={`email-row ${isSelected ? 'email-row-selected' : ''} ${!isRead ? 'email-row-unread' : ''
-                                }`}
+                            className={`email-row ${isSelected ? 'email-row-selected' : ''} ${isUnread ? 'email-row-unread' : ''}`}
                             onClick={() => onSelect(email)}
                         >
-                            {cls && (
-                                <span className={`priority-dot priority-${cls.priority}`} />
-                            )}
-                            {!cls && <span className="priority-dot priority-none" />}
+                            {/* Avatar */}
+                            <div className="email-avatar" style={{ background: senderColor(email.sender) }}>
+                                {formatSender(email.sender).charAt(0).toUpperCase()}
+                            </div>
 
                             <div className="email-row-content">
                                 <div className="email-row-top">
                                     <span className="email-sender">{formatSender(email.sender)}</span>
-                                    <span className="email-date">{formatDate(email.timestamp)}</span>
+                                    <div className="email-row-top-right">
+                                        {cls && <span className={`priority-pip priority-${cls.priority}`} />}
+                                        <span className="email-date">{formatDate(email.timestamp)}</span>
+                                    </div>
                                 </div>
                                 <div className="email-subject">{email.subject}</div>
                                 <div className="email-row-bottom">
                                     <span className="email-snippet">
-                                        {email.body.slice(0, 80).replace(/\n/g, ' ')}
+                                        {email.body.slice(0, 90).replace(/\n/g, ' ')}
                                     </span>
-                                    {cls && (
-                                        <span className={`category-tag category-${cls.category}`}>
-                                            {cls.category}
-                                        </span>
-                                    )}
+                                    <div className="email-row-tags">
+                                        {cls && (
+                                            <span className={`category-tag category-${cls.category}`}>
+                                                {cls.category}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+
+                            <button
+                                className={`email-star-btn ${email.is_starred ? 'starred' : ''}`}
+                                onClick={(e) => handleStar(e, email)}
+                                title={email.is_starred ? 'Unstar' : 'Star'}
+                            >
+                                <Star size={14} fill={email.is_starred ? '#fbbf24' : 'none'} />
+                            </button>
                         </div>
                     );
                 })}

@@ -39,3 +39,31 @@ export function formatSender(email) {
     }
     return email;
 }
+
+/**
+ * Generate a deterministic HSL color from a sender's email address.
+ * Used for avatar backgrounds.
+ */
+export function senderColor(email) {
+    let hash = 0;
+    for (let i = 0; i < email.length; i++) {
+        hash = email.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 55%, 45%)`;
+}
+
+/**
+ * Format a full date-time for display in detail views.
+ */
+export function formatFullDate(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleDateString([], {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
