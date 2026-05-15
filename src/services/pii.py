@@ -9,6 +9,7 @@ such as named people in sensitive contexts.
 from __future__ import annotations
 
 import re
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Iterable
@@ -31,6 +32,11 @@ except Exception:  # pragma: no cover - exercised only when dependency missing.
 
 SUPPORTED_ENTITIES = [
     "PERSON",
+    "LOCATION",
+    "ORGANIZATION",
+    "NRP",
+    "IP_ADDRESS",
+    "URL",
     "EMAIL_ADDRESS",
     "PHONE_NUMBER",
     "CREDIT_CARD",
@@ -40,7 +46,22 @@ SUPPORTED_ENTITIES = [
     "API_KEY",
 ]
 
-_SEMANTIC_ENTITIES = ["PERSON"]
+PII_MODE_STRICT_PRESIDIO = "strict_presidio"
+PII_MODE_LAZY_SEMANTIC = "lazy_semantic"
+PII_MODE_REGEX_ONLY = "regex_only"
+PII_MODES = {
+    PII_MODE_STRICT_PRESIDIO,
+    PII_MODE_LAZY_SEMANTIC,
+    PII_MODE_REGEX_ONLY,
+}
+
+_SEMANTIC_ENTITIES = ["PERSON", "LOCATION", "NRP", "IP_ADDRESS", "URL"]
+_SPACY_ENTITIES = {
+    "PERSON": "PERSON",
+    "ORG": "ORGANIZATION",
+    "GPE": "LOCATION",
+    "LOC": "LOCATION",
+}
 _SEMANTIC_CONTEXT_RE = re.compile(
     r"\b("
     r"my name is|contact person|point of contact|customer|client|patient|"
@@ -140,9 +161,16 @@ _REGEX_RULES = [
 class PrivacyGateway:
     """Detect, mask, and rehydrate PII without sending raw values to the LLM."""
 
-    def __init__(self, *, language: str = "en", semantic_detection: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        language: str = "en",
+        semantic_detection: bool = True,
+        mode: str | None = None,
+    ) -> None:
         self.language = language
         self.semantic_detection = semantic_detection
+        self.mode = _normalize_pii_mode(mode or os.getenv("PII_MODE", PII_MODE_STRICT_PRESIDIO))
         self._analyzer = None
         self._nlp = None
         self._counters: dict[str, int] = {}
@@ -189,15 +217,20 @@ class PrivacyGateway:
 
     def _detect(self, text: str) -> list[PiiFinding]:
         findings = self._detect_with_regex(text)
-        if not self.semantic_detection or not self._should_run_semantic_detection(text):
+        if not self.semantic_detection or self.mode == PII_MODE_REGEX_ONLY:
+            return findings
+
+        strict = self.mode == PII_MODE_STRICT_PRESIDIO
+        if not strict and not self._should_run_semantic_detection(text):
             return findings
 
         semantic_findings = self._detect_with_presidio(text)
         if semantic_findings:
             findings.extend(semantic_findings)
-            return findings
+            if not strict:
+                return findings
 
-        findings.extend(self._detect_with_spacy(text))
+        findings.extend(self._detect_with_spacy(text, strict=strict))
         return findings
 
     def _detect_with_regex(self, text: str) -> list[PiiFinding]:
@@ -231,7 +264,7 @@ class PrivacyGateway:
             if result.score >= 0.55
         ]
 
-    def _detect_with_spacy(self, text: str) -> list[PiiFinding]:
+    def _detect_with_spacy(self, text: str, *, strict: bool = False) -> list[PiiFinding]:
         nlp = self._get_nlp()
         if nlp is None:
             return []
@@ -242,12 +275,11 @@ class PrivacyGateway:
 
         findings: list[PiiFinding] = []
         for ent in doc.ents:
-            if ent.label_ in {"PERSON", "ORG"}:
-                entity_type = "PERSON" if ent.label_ == "PERSON" else "ORGANIZATION"
-                if self._should_mask_named_entity(text, ent.start_char, ent.end_char):
-                    findings.append(
-                        PiiFinding(ent.start_char, ent.end_char, entity_type, 0.65, "spacy")
-                    )
+            entity_type = _SPACY_ENTITIES.get(ent.label_)
+            if entity_type and (strict or self._should_mask_named_entity(text, ent.start_char, ent.end_char)):
+                findings.append(
+                    PiiFinding(ent.start_char, ent.end_char, entity_type, 0.65, "spacy")
+                )
         return findings
 
     def _get_analyzer(self):
@@ -480,5 +512,25 @@ def _ordered_unique(values: Iterable[str]) -> list[str]:
 def _public_type(entity_type: str) -> str:
     aliases = {
         "US_SSN": "ssn",
+        "NRP": "nationality_religion_political",
+        "GPE": "location",
     }
     return aliases.get(entity_type, entity_type.lower())
+
+
+def _normalize_pii_mode(mode: str) -> str:
+    normalized = mode.strip().lower().replace("-", "_")
+    aliases = {
+        "strict": PII_MODE_STRICT_PRESIDIO,
+        "presidio": PII_MODE_STRICT_PRESIDIO,
+        "strict_presidio_slow": PII_MODE_STRICT_PRESIDIO,
+        "lazy": PII_MODE_LAZY_SEMANTIC,
+        "semantic": PII_MODE_LAZY_SEMANTIC,
+        "lazy_semantic_fast": PII_MODE_LAZY_SEMANTIC,
+        "regex": PII_MODE_REGEX_ONLY,
+        "regexonly": PII_MODE_REGEX_ONLY,
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized not in PII_MODES:
+        return PII_MODE_STRICT_PRESIDIO
+    return normalized

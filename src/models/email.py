@@ -34,6 +34,7 @@ class Category(str, Enum):
 
 class Email(BaseModel):
     id: str
+    inbox: Optional[str] = None
     sender: str
     recipients: list[str]
     subject: str
@@ -45,6 +46,8 @@ class Email(BaseModel):
     classification: Optional[Classification] = None
     # Populated after draft generation.
     draft_reply: Optional[DraftReply] = None
+    # Internal UI/debug hint: db, source, source+cache, or source-updated.
+    storage_origin: Optional[str] = None
 
 
 class Classification(BaseModel):

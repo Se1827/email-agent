@@ -61,12 +61,27 @@ class TestNoRedaction:
 
 class TestPrivacyGateway:
     def test_regex_fast_path_does_not_initialize_nlp(self):
-        gateway = PrivacyGateway()
+        gateway = PrivacyGateway(mode="regex_only")
         result = gateway.mask_text("Email jane.doe@example.com with card 4111-1111-1111-1111.")
 
         assert result.was_redacted
         assert gateway._analyzer is None
         assert gateway._nlp is None
+
+    def test_default_mode_is_strict_presidio(self):
+        gateway = PrivacyGateway()
+        assert gateway.mode == "strict_presidio"
+
+    def test_lazy_mode_skips_semantic_without_context(self):
+        gateway = PrivacyGateway(mode="lazy_semantic")
+        result = gateway.mask_text("Alice will meet Bob about the roadmap.")
+
+        assert result.text == "Alice will meet Bob about the roadmap."
+        assert gateway._analyzer is None
+
+    def test_mode_aliases_are_supported(self):
+        gateway = PrivacyGateway(mode="regex")
+        assert gateway.mode == "regex_only"
 
     def test_semantic_tokens_are_rehydratable(self):
         gateway = PrivacyGateway()

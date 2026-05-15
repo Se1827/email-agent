@@ -13,10 +13,13 @@ from src.connectors.imap import fetch_emails as fetch_imap_emails
 from src.models.email import CalendarEvent, Classification, DraftReply, Email
 from src.services import classifier, drafter
 from src.services.calendar import get_upcoming_events, load_events
+from src.services.inbox_identity import canonicalize_inbox
 from src.services.pii import PrivacyGateway
 from src.storage import (
     delete_all_storage_records,
     delete_email_records,
+    email_content_hash,
+    load_email_states,
     load_email_state,
     safe_record_event,
     safe_store_calendar_event,
@@ -40,6 +43,7 @@ _calendar: list[CalendarEvent] = []
 def _load_email_source() -> list[Email]:
     """Load emails from the configured source (mock JSON or IMAP)."""
     cfg = get_settings()
+    inbox = _current_inbox()
     if cfg.email_source == "imap":
         return fetch_imap_emails(
             host=cfg.imap_host,
@@ -49,20 +53,25 @@ def _load_email_source() -> list[Email]:
             mailbox=cfg.imap_mailbox,
             limit=cfg.imap_fetch_limit,
             use_ssl=cfg.imap_use_ssl,
+            inbox=inbox,
         )
-    return load_mock_emails(cfg.data_dir / "seed_emails.json")
+    emails = load_mock_emails(cfg.data_dir / "seed_emails.json")
+    for email in emails:
+        email.inbox = inbox
+    return emails
 
 
 def _ensure_loaded() -> None:
     """Populate the in-memory stores on first access."""
     if not _emails:
         try:
-            source = get_settings().email_source
-            for email in _load_email_source():
-                _hydrate_email_state(email)
-                _emails[email.id] = email
-                safe_store_email(email, source=source)
-                _store_email_memory(email)
+            cfg = get_settings()
+            load_mode = _normalize_email_load_mode(cfg.email_load_mode)
+            if load_mode in {"db_then_source", "db_only"}:
+                _load_emails_from_storage(_current_inbox())
+            if load_mode != "db_only":
+                for email in _load_email_source():
+                    _merge_source_email(email, source=cfg.email_source)
         except Exception as exc:
             log.error("email_load_failed", extra={"error": str(exc)})
             raise HTTPException(
@@ -76,6 +85,45 @@ def _ensure_loaded() -> None:
         _calendar.extend(load_events(get_settings().data_dir / "calendar.json"))
         for event in _calendar:
             safe_store_calendar_event(event, source="mock")
+
+
+def _load_emails_from_storage(inbox: str) -> None:
+    for payload in load_email_states(inbox=inbox):
+        try:
+            email = Email.model_validate(payload)
+        except Exception:
+            log.exception("stored_email_load_failed")
+            continue
+        email.storage_origin = "db"
+        _emails[email.id] = email
+        _store_email_memory(email)
+
+
+def _merge_source_email(email: Email, *, source: str) -> None:
+    """Merge a fresh source email into DB-seeded inbox state."""
+    email.inbox = email.inbox or _current_inbox()
+    cached = _emails.get(email.id)
+    if cached is None:
+        _hydrate_email_state(email)
+        email.storage_origin = "source+cache" if email.classification or email.draft_reply else "source"
+    elif email_content_hash(email) == email_content_hash(cached):
+        email.classification = cached.classification
+        email.draft_reply = cached.draft_reply
+        email.storage_origin = "source+cache"
+    else:
+        safe_record_event(
+            "email.source_updated",
+            {
+                "previous_content_hash": email_content_hash(cached),
+                "new_content_hash": email_content_hash(email),
+                "source": source,
+            },
+            subject_id=email.id,
+        )
+        email.storage_origin = "source-updated"
+    _emails[email.id] = email
+    safe_store_email(email, source=source)
+    _store_email_memory(email)
 
 
 def _get_email(email_id: str) -> Email:
@@ -92,7 +140,7 @@ def _relevant_events(email: Email) -> list[CalendarEvent]:
 
 def _hydrate_email_state(email: Email) -> None:
     """Apply cached workflow state from encrypted storage onto source emails."""
-    stored = load_email_state(email.id)
+    stored = load_email_state(email.id, inbox=email.inbox or _current_inbox())
     if not stored:
         return
     try:
@@ -102,6 +150,7 @@ def _hydrate_email_state(email: Email) -> None:
         return
     email.classification = cached.classification
     email.draft_reply = cached.draft_reply
+    email.storage_origin = "source+cache"
 
 
 def _persist_email_state(email: Email, *, source: str = "workflow") -> None:
@@ -158,6 +207,22 @@ def _sentiment_hint(text: str) -> str:
     if any(word in lowered for word in ("thanks", "appreciate", "great", "happy")):
         return "positive"
     return "neutral"
+
+
+def _normalize_email_load_mode(mode: str) -> str:
+    normalized = mode.strip().lower().replace("-", "_")
+    if normalized in {"source", "source_only"}:
+        return "source_only"
+    if normalized in {"db", "db_only", "cache_only"}:
+        return "db_only"
+    return "db_then_source"
+
+
+def _current_inbox() -> str:
+    cfg = get_settings()
+    if cfg.email_source == "imap":
+        return canonicalize_inbox(cfg.imap_user, fallback=f"imap:{cfg.imap_host}:{cfg.imap_mailbox}")
+    return "mock"
 
 
 # ---- Endpoints -------------------------------------------------------------
