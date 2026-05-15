@@ -1,18 +1,26 @@
-"""Draft reply service — generates context-aware email replies via LLM."""
+"""Draft reply service — generates context-aware email replies via LLM.
+
+Uses LangChain ChatGroq with quality-aware prompting and smart calendar
+context filtering. Only relevant calendar events are injected.
+"""
 
 from __future__ import annotations
 
 import logging
 
 from src.llm import client as llm
-from src.llm.prompts import DRAFT_SYSTEM, DRAFT_USER
+from src.llm.prompts import (
+    DRAFT_QUALITY_PARAMS,
+    DRAFT_SYSTEM,
+    DRAFT_USER_TEMPLATES,
+)
 from src.models.email import (
     CalendarEvent,
     Classification,
     DraftReply,
     Email,
 )
-from src.services.calendar import format_calendar_context
+from src.services.classifier import filter_relevant_events, _format_relevant_context
 from src.services.pii import PrivacyGateway, redact
 from src.storage import safe_store_pii_mappings
 
@@ -23,17 +31,32 @@ async def draft_reply(
     email: Email,
     classification: Classification,
     calendar_events: list[CalendarEvent] | None = None,
+    *,
+    quality: str = "balanced",
 ) -> DraftReply:
     """Generate a reply draft for the given email.
 
     The original email is masked before it reaches the LLM. If the model uses
     semantic placeholders in its answer, only those known local values are
     rehydrated before user review.
+
+    Quality levels:
+      - "quick":    fast, 2-3 sentence reply (temp=0.3, 300 tokens)
+      - "balanced": standard helpful reply (temp=0.4, 600 tokens)
+      - "thorough": comprehensive detailed reply (temp=0.5, 1024 tokens)
     """
     privacy = PrivacyGateway()
-    cal_ctx = format_calendar_context(calendar_events or [])
 
-    user_msg = DRAFT_USER.format(
+    # Smart filter: only inject relevant events (same logic as classifier)
+    relevant_events = filter_relevant_events(email, calendar_events or [])
+    cal_ctx = _format_relevant_context(relevant_events)
+
+    # Select quality-appropriate template and LLM params
+    quality = quality if quality in DRAFT_USER_TEMPLATES else "balanced"
+    template = DRAFT_USER_TEMPLATES[quality]
+    temperature, max_tokens = DRAFT_QUALITY_PARAMS[quality]
+
+    user_msg = template.format(
         sender=privacy.mask_text(email.sender).text,
         subject=privacy.mask_text(email.subject).text,
         timestamp=email.timestamp.isoformat(),
@@ -48,7 +71,8 @@ async def draft_reply(
             {"role": "system", "content": DRAFT_SYSTEM},
             {"role": "user", "content": user_msg},
         ],
-        temperature=0.4,
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
 
     rehydrated = privacy.rehydrate_text(raw.strip())
@@ -58,6 +82,7 @@ async def draft_reply(
     draft = DraftReply(
         body=result.text,
         tone="professional",
+        quality=quality,
         pii_redacted=result.was_redacted,
         redacted_types=pii_types,
     )
@@ -67,6 +92,10 @@ async def draft_reply(
         "draft_generated",
         extra={
             "email_id": email.id,
+            "quality": quality,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "relevant_events": len(relevant_events),
             "pii_redacted": draft.pii_redacted,
         },
     )

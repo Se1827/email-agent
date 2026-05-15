@@ -208,9 +208,16 @@ def _load_emails_from_storage(inbox: str, *, account: AccountConfig | None = Non
         except Exception:
             log.exception("stored_email_load_failed")
             continue
-        if account is not None and not email.account_id:
-            email.account_id = account.id
+        if account is not None:
+            if not email.account_id:
+                email.account_id = account.id
             email.inbox = inbox
+            # Normalize the ID to include account prefix so it matches
+            # what _stamp_account_email() will produce from the source.
+            if not email.id.startswith(f"{account.id}:"):
+                email.id = f"{account.id}:{email.id}"
+            if email.thread_id and not email.thread_id.startswith(f"{account.id}:"):
+                email.thread_id = f"{account.id}:{email.thread_id}"
         email.storage_origin = "db"
         _emails[email.id] = email
         _store_email_memory(email)
@@ -451,9 +458,9 @@ async def draft_email_reply(
         )
         return email.draft_reply.model_dump(mode="json")
     result = await drafter.draft_reply(
-        email, email.classification, _relevant_events(email)
+        email, email.classification, _relevant_events(email),
+        quality=quality,
     )
-    result.quality = quality
     email.draft_reply = result
     safe_record_event(
         "email.drafted",
