@@ -15,7 +15,7 @@ function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [newEvent, setNewEvent] = useState({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1' });
+  const [newEvent, setNewEvent] = useState({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1', is_all_day: false });
 
   useEffect(() => { loadEvents(); }, []);
 
@@ -39,7 +39,7 @@ function CalendarPage() {
       });
       await loadEvents();
       setShowCreate(false);
-      setNewEvent({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1' });
+      setNewEvent({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1', is_all_day: false });
     } catch (err) {
       console.error('Create failed:', err);
     }
@@ -163,7 +163,14 @@ function CalendarPage() {
                   <div className="cal-event-meta">
                     <span className="cal-event-meta-item">
                       <Clock size={12} />
-                      {ev.is_all_day ? 'All day' : new Date(ev.start).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                      {ev.is_all_day
+                        ? 'All day'
+                        : (() => {
+                            const startT = new Date(ev.start).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                            const endT = ev.end ? new Date(ev.end).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : null;
+                            return endT && endT !== startT ? `${startT} – ${endT}` : startT;
+                          })()
+                      }
                     </span>
                     {ev.location && (
                       <span className="cal-event-meta-item"><MapPin size={12} /> {ev.location}</span>
@@ -201,11 +208,27 @@ function CalendarPage() {
               <label className="form-label">Title *</label>
               <input className="input" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder="Event title" />
 
-              <label className="form-label">Start Date/Time *</label>
-              <input className="input" type="datetime-local" value={newEvent.start} onChange={e => setNewEvent({...newEvent, start: e.target.value})} />
+              <div className="form-row">
+                <label className="form-checkbox">
+                  <input type="checkbox" checked={newEvent.is_all_day} onChange={e => setNewEvent({...newEvent, is_all_day: e.target.checked})} />
+                  <span>All-day event</span>
+                </label>
+              </div>
 
-              <label className="form-label">End Date/Time</label>
-              <input className="input" type="datetime-local" value={newEvent.end} onChange={e => setNewEvent({...newEvent, end: e.target.value})} />
+              {newEvent.is_all_day ? (
+                <>
+                  <label className="form-label">Date *</label>
+                  <input className="input" type="date" value={newEvent.start?.split('T')[0] || ''} onChange={e => setNewEvent({...newEvent, start: e.target.value + 'T00:00', end: e.target.value + 'T23:59'})} />
+                </>
+              ) : (
+                <>
+                  <label className="form-label">Start Date/Time *</label>
+                  <input className="input" type="datetime-local" value={newEvent.start} onChange={e => setNewEvent({...newEvent, start: e.target.value})} />
+
+                  <label className="form-label">End Date/Time *</label>
+                  <input className="input" type="datetime-local" value={newEvent.end} onChange={e => setNewEvent({...newEvent, end: e.target.value})} />
+                </>
+              )}
 
               <label className="form-label">Location</label>
               <input className="input" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="Room / Link" />
@@ -222,7 +245,7 @@ function CalendarPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleCreate} disabled={!newEvent.title || !newEvent.start}>Create Event</button>
+              <button className="btn btn-primary" onClick={handleCreate} disabled={!newEvent.title || !newEvent.start || (!newEvent.is_all_day && !newEvent.end)}>Create Event</button>
             </div>
           </div>
         </div>

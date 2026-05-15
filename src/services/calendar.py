@@ -23,15 +23,21 @@ def load_events(data_file: Path) -> list[CalendarEvent]:
     return events
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Return a timezone-aware datetime, assuming UTC if naive."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def get_upcoming_events(
     events: list[CalendarEvent],
     around: datetime,
     window_days: int = 7,
 ) -> list[CalendarEvent]:
     """Return events within ``window_days`` of the given timestamp."""
+    around = _as_utc(around)
     start = around - timedelta(days=1)
     end = around + timedelta(days=window_days)
-    return [e for e in events if start <= e.start <= end]
+    return [e for e in events if start <= _as_utc(e.start) <= end]
 
 
 def get_events_for_date(

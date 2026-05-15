@@ -82,55 +82,112 @@ def _log_activity(action: str, detail: str, related_id: str | None = None) -> No
 
 
 def _generate_notifications() -> None:
-    """Build smart notifications from current email + calendar state."""
+    """Build smart notifications from real email + calendar state.
+
+    Every notification is derived from actual data in _emails and _calendar,
+    not hardcoded. This is called fresh on each dashboard request.
+    """
     _notifications.clear()
     now = datetime.now(timezone.utc)
 
-    # Urgent unresponded emails
-    urgent_count = sum(
-        1 for e in _emails.values()
+    # ── 1. Urgent unresponded emails (from real classified data) ─────────
+    urgent_emails = [
+        e for e in _emails.values()
         if e.classification
         and e.classification.priority.value in ("critical", "high")
         and not e.draft_reply
-        and not e.is_read
-    )
-    if urgent_count > 0:
+    ]
+    if urgent_emails:
+        subjects = [e.subject[:50] for e in urgent_emails[:3]]
         _notifications.append(Notification(
-            id=f"notif-urgent-{uuid4().hex[:6]}",
+            id=f"notif-urgent-{len(urgent_emails)}",
             type="urgent_email",
-            title="Urgent emails need attention",
-            message=f"{urgent_count} {'email needs' if urgent_count == 1 else 'emails need'} a response",
+            title=f"{len(urgent_emails)} urgent {'email' if len(urgent_emails) == 1 else 'emails'} need a reply",
+            message="; ".join(subjects),
             severity="critical",
+            related_id=urgent_emails[0].id,
+            related_type="email",
             timestamp=now,
         ))
 
-    # Upcoming deadlines (next 48h)
+    # ── 2. Upcoming calendar events (real events within 48h) ────────────
     for ev in _calendar:
-        hours_until = (ev.start.replace(tzinfo=timezone.utc) - now).total_seconds() / 3600
-        if 0 < hours_until < 48:
-            sev = "critical" if hours_until < 6 else "warning" if hours_until < 24 else "info"
-            _notifications.append(Notification(
-                id=f"notif-cal-{ev.id}",
-                type="deadline" if ev.is_all_day else "meeting_soon",
-                title=f"{'Deadline' if ev.is_all_day else 'Upcoming'}: {ev.title}",
-                message=f"In {int(hours_until)} hours" if hours_until >= 1 else "Less than 1 hour away",
-                severity=sev,
-                related_id=ev.id,
-                related_type="event",
-                timestamp=now,
-            ))
+        ev_start = ev.start
+        if ev_start.tzinfo is None:
+            ev_start = ev_start.replace(tzinfo=timezone.utc)
+        delta = (ev_start - now).total_seconds() / 3600
+        if delta < 0 or delta > 48:
+            continue
 
-    # Unclassified emails insight
-    unclassified = sum(1 for e in _emails.values() if not e.classification)
-    if unclassified > 0:
+        if delta < 1:
+            sev, time_msg = "critical", "Less than 1 hour away"
+        elif delta < 6:
+            sev, time_msg = "critical", f"In {int(delta)} hours"
+        elif delta < 24:
+            sev, time_msg = "warning", f"In {int(delta)} hours"
+        else:
+            sev, time_msg = "info", f"Tomorrow — in {int(delta)} hours"
+
+        evt_type = "deadline" if ev.is_all_day else "meeting_soon"
+        prefix = "Deadline" if ev.is_all_day else "Upcoming"
+        location_hint = f" @ {ev.location}" if ev.location else ""
         _notifications.append(Notification(
-            id=f"notif-unclassified-{uuid4().hex[:6]}",
+            id=f"notif-cal-{ev.id}",
+            type=evt_type,
+            title=f"{prefix}: {ev.title}",
+            message=f"{time_msg}{location_hint}",
+            severity=sev,
+            related_id=ev.id,
+            related_type="event",
+            timestamp=now,
+        ))
+
+    # ── 3. Unclassified emails (real count) ─────────────────────────────
+    unclassified = [e for e in _emails.values() if not e.classification]
+    if unclassified:
+        _notifications.append(Notification(
+            id=f"notif-unclassified-{len(unclassified)}",
             type="ai_insight",
             title="Emails awaiting AI triage",
-            message=f"{unclassified} {'email has' if unclassified == 1 else 'emails have'} not been classified yet",
-            severity="info",
+            message=f"{len(unclassified)} {'email has' if len(unclassified) == 1 else 'emails have'} not been classified yet",
+            severity="info" if len(unclassified) < 5 else "warning",
             timestamp=now,
         ))
+
+    # ── 4. Drafts awaiting approval (real count) ────────────────────────
+    pending_drafts = [e for e in _emails.values() if e.draft_reply and not e.is_read]
+    if pending_drafts:
+        _notifications.append(Notification(
+            id=f"notif-drafts-{len(pending_drafts)}",
+            type="ai_insight",
+            title=f"{len(pending_drafts)} draft {'reply' if len(pending_drafts) == 1 else 'replies'} ready for review",
+            message="Review and approve AI-generated replies before sending",
+            severity="info",
+            related_id=pending_drafts[0].id,
+            related_type="email",
+            timestamp=now,
+        ))
+
+    # ── 5. High-priority emails with calendar conflicts ─────────────────
+    for e in _emails.values():
+        if not e.classification or e.classification.category.value != "meeting":
+            continue
+        if e.draft_reply:
+            continue
+        # Check if any calendar events overlap with this meeting email
+        from src.services.classifier import filter_relevant_events
+        related = filter_relevant_events(e, _calendar)
+        if related:
+            _notifications.append(Notification(
+                id=f"notif-conflict-{e.id[:8]}",
+                type="calendar_conflict",
+                title=f"Meeting email may conflict with: {related[0].title}",
+                message=f"From {e.sender.split('@')[0]} — '{e.subject[:40]}'",
+                severity="warning",
+                related_id=e.id,
+                related_type="email",
+                timestamp=now,
+            ))
 
 
 def _load_email_source() -> list[Email]:
@@ -411,12 +468,38 @@ async def classify_email(
         return email.classification.model_dump(mode="json")
     result = await classifier.classify(email, _relevant_events(email))
     email.classification = result
+
+    # ── Auto-create calendar event from meeting/critical emails ──────────
+    #auto_event = classifier.extract_meeting_event(email, result)
+    auto_event = classifier.extract_meeting_event(email, result, _calendar)
+    if auto_event:
+        # Check if we already have an auto-event for this email
+        existing_auto = any(e.id == auto_event.id for e in _calendar)
+        if not existing_auto:
+            _calendar.append(auto_event)
+            safe_store_calendar_event(auto_event, source="auto_from_email")
+            _log_activity(
+                "auto_event",
+                f"Calendar event created: {auto_event.title}",
+                auto_event.id,
+            )
+            log.info(
+                "auto_event_created",
+                extra={
+                    "email_id": email.id,
+                    "event_id": auto_event.id,
+                    "event_title": auto_event.title,
+                    "event_start": auto_event.start.isoformat(),
+                },
+            )
+
     safe_record_event(
         "email.classified",
         {
             "classification": result.model_dump(mode="json"),
             "subject": email.subject,
             "sender": email.sender,
+            "auto_event": auto_event.id if auto_event else None,
         },
         subject_id=email.id,
     )
@@ -426,7 +509,11 @@ async def classify_email(
         email.id,
     )
     _persist_email_state(email)
-    return result.model_dump(mode="json")
+
+    response = result.model_dump(mode="json")
+    if auto_event:
+        response["auto_event"] = auto_event.model_dump(mode="json")
+    return response
 
 
 class DraftRequest(BaseModel):
