@@ -1,18 +1,30 @@
 [
     {
-        "id": "work-primary",
-        "name": "Work",
-        "email": "you@company.com",
+        "id": "testing",
+        "name": "Babu",
+        "email": "testing@babu.com",
         "provider": "mock",
+        "imap_host": "",
+        "imap_port": 993,
+        "imap_user": "testing@babu.com",
+        "imap_pass": "",
+        "imap_mailbox": "INBOX",
+        "imap_use_ssl": true,
         "color": "#3b82f6",
         "is_active": true
     },
     {
-        "id": "personal",
-        "name": "Personal",
-        "email": "you@gmail.com",
-        "provider": "mock",
-        "color": "#8b5cf6",
-        "is_active": false
+        "id": "modibhakt",
+        "name": "Z org",
+        "email": "modibhakt@elektrine.com",
+        "provider": "imap",
+        "imap_host": "mail.elektrine.com",
+        "imap_port": 993,
+        "imap_user": "modibhakt@elektrine.com",
+        "imap_pass": "0!21%O1apF6ILjgOhlO7Q4@Y5l",
+        "imap_mailbox": "INBOX",
+        "imap_use_ssl": true,
+        "color": "#c5f73b",
+        "is_active": true
     }
 ]

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
+import { ChevronDown } from 'lucide-react';
 import InboxSidebar from '../components/InboxSidebar';
 import EmailList from '../components/EmailList';
 import EmailDetail from '../components/EmailDetail';
-import { fetchEmails, classifyAll, refreshInbox } from '../api';
+import { fetchAccounts, fetchEmails, classifyAll, refreshInbox } from '../api';
 import './InboxPage.css';
 
 function InboxPage() {
@@ -13,23 +14,45 @@ function InboxPage() {
   const [filters, setFilters] = useState({ priority: [], category: [], folder: 'all' });
   const [busyAction, setBusyAction] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState(() => localStorage.getItem('selectedAccountId') || 'all');
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+
+  const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
 
   const loadEmails = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchEmails();
+      const data = await fetchEmails(selectedAccountId === 'all' ? null : selectedAccountId);
       setEmails(data);
     } catch (err) {
       setError('Cannot reach the API server. Is it running on :8000?');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedAccountId]);
 
   useEffect(() => {
     loadEmails();
   }, [loadEmails]);
+
+  useEffect(() => {
+    fetchAccounts().then((data) => {
+      setAccounts(data);
+      if (selectedAccountId !== 'all' && !data.some((account) => account.id === selectedAccountId)) {
+        setSelectedAccountId('all');
+        localStorage.setItem('selectedAccountId', 'all');
+      }
+    }).catch(() => setAccounts([]));
+  }, [selectedAccountId]);
+
+  const chooseAccount = (accountId) => {
+    setSelectedAccountId(accountId);
+    localStorage.setItem('selectedAccountId', accountId);
+    setSelected(null);
+    setAccountMenuOpen(false);
+  };
 
   const handleRefresh = async () => {
     setBusyAction('refresh');
@@ -45,7 +68,7 @@ function InboxPage() {
   const handleClassifyAll = async () => {
     setBusyAction('classify-all');
     try {
-      await classifyAll();
+      await classifyAll(selectedAccountId === 'all' ? null : selectedAccountId);
       await loadEmails();
     } finally {
       setBusyAction(null);
@@ -109,6 +132,48 @@ function InboxPage() {
 
   return (
     <div className="inbox-page" id="inbox-page">
+      <div className="account-switcher">
+        <button
+          className="account-switcher-button"
+          onClick={() => setAccountMenuOpen((open) => !open)}
+          title="Switch account"
+        >
+          <span
+            className="account-switcher-avatar"
+            style={{ background: selectedAccount?.color || 'var(--gradient-accent)' }}
+          >
+            {selectedAccount ? selectedAccount.name.charAt(0).toUpperCase() : 'A'}
+          </span>
+          <ChevronDown size={13} />
+        </button>
+        {accountMenuOpen && (
+          <div className="account-switcher-menu">
+            <button
+              className={`account-switcher-item ${selectedAccountId === 'all' ? 'active' : ''}`}
+              onClick={() => chooseAccount('all')}
+            >
+              <span className="account-switcher-dot all" />
+              <span>
+                <strong>All accounts</strong>
+                <small>{accounts.filter((a) => a.is_active).length || accounts.length} configured</small>
+              </span>
+            </button>
+            {accounts.map((account) => (
+              <button
+                key={account.id}
+                className={`account-switcher-item ${selectedAccountId === account.id ? 'active' : ''}`}
+                onClick={() => chooseAccount(account.id)}
+              >
+                <span className="account-switcher-dot" style={{ background: account.color }} />
+                <span>
+                  <strong>{account.name}</strong>
+                  <small>{account.email}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <InboxSidebar
         filters={filters}
         onFiltersChange={setFilters}

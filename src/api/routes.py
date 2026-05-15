@@ -14,6 +14,7 @@ from src.config import get_settings
 from src.connectors.mock import load_emails as load_mock_emails
 from src.connectors.imap import fetch_emails as fetch_imap_emails
 from src.models.email import (
+    AccountConfig,
     CalendarEvent,
     Classification,
     DashboardStats,
@@ -23,7 +24,13 @@ from src.models.email import (
     Notification,
 )
 from src.services import classifier, drafter
-from src.services.accounts import load_accounts, list_accounts_summary
+from src.services.accounts import (
+    account_inbox,
+    get_account,
+    load_accounts,
+    list_accounts_summary,
+    save_accounts,
+)
 from src.services.calendar import (
     create_event,
     delete_event,
@@ -127,24 +134,43 @@ def _generate_notifications() -> None:
 
 
 def _load_email_source() -> list[Email]:
-    """Load emails from the configured source (mock JSON or IMAP)."""
+    """Load emails from every active configured account."""
     cfg = get_settings()
-    inbox = _current_inbox()
-    if cfg.email_source == "imap":
-        return fetch_imap_emails(
-            host=cfg.imap_host,
-            port=cfg.imap_port,
-            username=cfg.imap_user,
-            password=cfg.imap_pass,
-            mailbox=cfg.imap_mailbox,
-            limit=cfg.imap_fetch_limit,
-            use_ssl=cfg.imap_use_ssl,
-            inbox=inbox,
-        )
-    emails = load_mock_emails(cfg.data_dir / "seed_emails.json")
-    for email in emails:
-        email.inbox = inbox
+    emails: list[Email] = []
+    for account in load_accounts(cfg.data_dir):
+        if not account.is_active:
+            continue
+        inbox = account_inbox(account)
+        source_emails = _load_account_email_source(account, inbox)
+        for email in source_emails:
+            _stamp_account_email(email, account, inbox)
+        emails.extend(source_emails)
     return emails
+
+
+def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email]:
+    cfg = get_settings()
+    if account.provider == "mock":
+        return load_mock_emails(cfg.data_dir / "seed_emails.json")
+    return fetch_imap_emails(
+        host=account.imap_host or cfg.imap_host,
+        port=account.imap_port or cfg.imap_port,
+        username=account.imap_user or account.email or cfg.imap_user,
+        password=account.imap_pass or cfg.imap_pass,
+        mailbox=account.imap_mailbox or cfg.imap_mailbox,
+        limit=cfg.imap_fetch_limit,
+        use_ssl=account.imap_use_ssl,
+        inbox=inbox,
+    )
+
+
+def _stamp_account_email(email: Email, account: AccountConfig, inbox: str) -> None:
+    email.account_id = account.id
+    email.inbox = inbox
+    if not email.id.startswith(f"{account.id}:"):
+        email.id = f"{account.id}:{email.id}"
+    if email.thread_id and not email.thread_id.startswith(f"{account.id}:"):
+        email.thread_id = f"{account.id}:{email.thread_id}"
 
 
 def _ensure_loaded() -> None:
@@ -154,10 +180,12 @@ def _ensure_loaded() -> None:
             cfg = get_settings()
             load_mode = _normalize_email_load_mode(cfg.email_load_mode)
             if load_mode in {"db_then_source", "db_only"}:
-                _load_emails_from_storage(_current_inbox())
+                for account in load_accounts(cfg.data_dir):
+                    if account.is_active:
+                        _load_emails_from_storage(account_inbox(account), account=account)
             if load_mode != "db_only":
                 for email in _load_email_source():
-                    _merge_source_email(email, source=cfg.email_source)
+                    _merge_source_email(email, source=email.account_id or cfg.email_source)
         except Exception as exc:
             log.error("email_load_failed", extra={"error": str(exc)})
             raise HTTPException(
@@ -173,13 +201,16 @@ def _ensure_loaded() -> None:
             safe_store_calendar_event(event, source="mock")
 
 
-def _load_emails_from_storage(inbox: str) -> None:
+def _load_emails_from_storage(inbox: str, *, account: AccountConfig | None = None) -> None:
     for payload in load_email_states(inbox=inbox):
         try:
             email = Email.model_validate(payload)
         except Exception:
             log.exception("stored_email_load_failed")
             continue
+        if account is not None and not email.account_id:
+            email.account_id = account.id
+            email.inbox = inbox
         email.storage_origin = "db"
         _emails[email.id] = email
         _store_email_memory(email)
@@ -189,6 +220,9 @@ def _merge_source_email(email: Email, *, source: str) -> None:
     """Merge a fresh source email into DB-seeded inbox state."""
     email.inbox = email.inbox or _current_inbox()
     cached = _emails.get(email.id)
+    if cached is None and email.account_id and email.id.startswith(f"{email.account_id}:"):
+        legacy_id = email.id.split(":", 1)[1]
+        cached = _emails.pop(legacy_id, None)
     if cached is None:
         _hydrate_email_state(email)
         email.storage_origin = "source+cache" if email.classification or email.draft_reply else "source"
@@ -312,9 +346,10 @@ def _normalize_email_load_mode(mode: str) -> str:
 
 def _current_inbox() -> str:
     cfg = get_settings()
-    if cfg.email_source == "imap":
-        return canonicalize_inbox(cfg.imap_user, fallback=f"imap:{cfg.imap_host}:{cfg.imap_mailbox}")
-    return "mock"
+    accounts = [account for account in load_accounts(cfg.data_dir) if account.is_active]
+    if accounts:
+        return account_inbox(accounts[0])
+    return canonicalize_inbox(cfg.imap_user, fallback=f"imap:{cfg.imap_host}:{cfg.imap_mailbox}")
 
 
 # ---- Email Endpoints -------------------------------------------------------
@@ -479,11 +514,15 @@ async def mark_as_read(email_id: str) -> dict[str, Any]:
 
 
 @router.post("/emails/classify-all")
-async def classify_all() -> list[dict[str, Any]]:
+async def classify_all(
+    account_id: str | None = Query(None, description="Classify only one account"),
+) -> list[dict[str, Any]]:
     """Batch-classify all emails that have not been classified yet."""
     _ensure_loaded()
     results = []
     for email in _emails.values():
+        if account_id and email.account_id != account_id:
+            continue
         if email.classification is None:
             result = await classifier.classify(email, _relevant_events(email))
             email.classification = result
@@ -544,6 +583,10 @@ async def get_dashboard() -> dict[str, Any]:
 
     cfg = get_settings()
     accounts = list_accounts_summary(load_accounts(cfg.data_dir))
+    for account in accounts:
+        account_emails = [e for e in emails if e.account_id == account["id"]]
+        account["email_count"] = len(account_emails)
+        account["unread_count"] = sum(1 for e in account_emails if not e.is_read)
     now = datetime.now(timezone.utc)
     upcoming = get_upcoming_events(_calendar, now, window_days=7)
 
@@ -589,6 +632,92 @@ async def list_accounts() -> list[dict[str, Any]]:
     """Return configured email accounts (no credentials)."""
     cfg = get_settings()
     return list_accounts_summary(load_accounts(cfg.data_dir))
+
+
+class AccountCreate(BaseModel):
+    name: str
+    email: str
+    provider: str = "imap"
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_user: str = ""
+    imap_pass: str = ""
+    imap_mailbox: str = "INBOX"
+    imap_use_ssl: bool = True
+    color: str = "#3b82f6"
+    is_active: bool = True
+
+
+class AccountUpdate(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    provider: str | None = None
+    imap_host: str | None = None
+    imap_port: int | None = None
+    imap_user: str | None = None
+    imap_pass: str | None = None
+    imap_mailbox: str | None = None
+    imap_use_ssl: bool | None = None
+    color: str | None = None
+    is_active: bool | None = None
+
+
+@router.post("/accounts")
+async def create_account(body: AccountCreate) -> dict[str, Any]:
+    cfg = get_settings()
+    accounts = load_accounts(cfg.data_dir)
+    account = AccountConfig(
+        id=_new_account_id(accounts, body.email),
+        **body.model_dump(),
+    )
+    accounts.append(account)
+    save_accounts(cfg.data_dir, accounts)
+    _emails.clear()
+    _log_activity("account_created", f"Account '{account.name}' added", account.id)
+    return list_accounts_summary([account])[0]
+
+
+@router.put("/accounts/{account_id}")
+async def update_account(account_id: str, body: AccountUpdate) -> dict[str, Any]:
+    cfg = get_settings()
+    accounts = load_accounts(cfg.data_dir)
+    account = get_account(accounts, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if updates.get("imap_pass") == "":
+        updates.pop("imap_pass")
+    updated = account.model_copy(update=updates)
+    accounts = [updated if a.id == account_id else a for a in accounts]
+    save_accounts(cfg.data_dir, accounts)
+    _emails.clear()
+    _log_activity("account_updated", f"Account '{updated.name}' updated", updated.id)
+    return list_accounts_summary([updated])[0]
+
+
+@router.delete("/accounts/{account_id}")
+async def delete_account(account_id: str) -> dict[str, str]:
+    cfg = get_settings()
+    accounts = load_accounts(cfg.data_dir)
+    if get_account(accounts, account_id) is None:
+        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
+    remaining = [account for account in accounts if account.id != account_id]
+    save_accounts(cfg.data_dir, remaining)
+    _emails.clear()
+    _log_activity("account_deleted", f"Account '{account_id}' removed", account_id)
+    return {"status": "deleted", "account_id": account_id}
+
+
+def _new_account_id(accounts: list[AccountConfig], email: str) -> str:
+    base = canonicalize_inbox(email, fallback="account").split("@")[0] or "account"
+    candidate = "".join(ch if ch.isalnum() else "-" for ch in base.lower()).strip("-")[:24] or "account"
+    existing = {account.id for account in accounts}
+    if candidate not in existing:
+        return candidate
+    suffix = 2
+    while f"{candidate}-{suffix}" in existing:
+        suffix += 1
+    return f"{candidate}-{suffix}"
 
 
 # ---- Calendar Endpoints ----------------------------------------------------

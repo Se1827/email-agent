@@ -41,8 +41,9 @@ export function approveDraft(id) {
     return request(`/emails/${id}/approve`, { method: 'POST' });
 }
 
-export function classifyAll() {
-    return request('/emails/classify-all', { method: 'POST' });
+export function classifyAll(accountId) {
+    const params = accountId ? `?account_id=${accountId}` : '';
+    return request(`/emails/classify-all${params}`, { method: 'POST' });
 }
 
 export function refreshInbox() {
@@ -73,6 +74,24 @@ export function dismissNotification(id) {
 // ---- Accounts ----
 export function fetchAccounts() {
     return request('/accounts');
+}
+
+export function createAccount(data) {
+    return request('/accounts', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+}
+
+export function updateAccount(id, data) {
+    return request(`/accounts/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+    });
+}
+
+export function deleteAccount(id) {
+    return request(`/accounts/${id}`, { method: 'DELETE' });
 }
 
 // ---- Calendar ----
