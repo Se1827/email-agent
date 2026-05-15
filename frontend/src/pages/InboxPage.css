@@ -1,0 +1,11 @@
+.inbox-page {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.inbox-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}

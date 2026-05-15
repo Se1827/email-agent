@@ -48,6 +48,9 @@ class Settings:
     otel_service_name: str
     otel_exporter_otlp_endpoint: str
 
+    # Draft quality default.
+    default_draft_quality: str
+
     @classmethod
     def from_env(cls) -> Settings:
         api_key = os.getenv("GROQ_API_KEY", "")
@@ -79,6 +82,7 @@ class Settings:
             otel_enabled=os.getenv("OTEL_ENABLED", "false").lower() == "true",
             otel_service_name=os.getenv("OTEL_SERVICE_NAME", "email-agent"),
             otel_exporter_otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+            default_draft_quality=os.getenv("DEFAULT_DRAFT_QUALITY", "balanced"),
         )
 
 

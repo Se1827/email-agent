@@ -3,16 +3,35 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from src.config import get_settings
 from src.connectors.mock import load_emails as load_mock_emails
 from src.connectors.imap import fetch_emails as fetch_imap_emails
-from src.models.email import CalendarEvent, Classification, DraftReply, Email
+from src.models.email import (
+    CalendarEvent,
+    Classification,
+    DashboardStats,
+    DraftQuality,
+    DraftReply,
+    Email,
+    Notification,
+)
 from src.services import classifier, drafter
-from src.services.calendar import get_upcoming_events, load_events
+from src.services.accounts import load_accounts, list_accounts_summary
+from src.services.calendar import (
+    create_event,
+    delete_event,
+    format_calendar_context,
+    get_upcoming_events,
+    load_events,
+    update_event,
+)
 from src.services.inbox_identity import canonicalize_inbox
 from src.services.pii import PrivacyGateway
 from src.storage import (
@@ -38,6 +57,73 @@ router = APIRouter()
 
 _emails: dict[str, Email] = {}
 _calendar: list[CalendarEvent] = []
+_notifications: list[Notification] = []
+_activity_log: list[dict[str, Any]] = []
+
+
+def _log_activity(action: str, detail: str, related_id: str | None = None) -> None:
+    """Append an entry to the in-memory activity feed."""
+    _activity_log.insert(0, {
+        "id": uuid4().hex[:8],
+        "action": action,
+        "detail": detail,
+        "related_id": related_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    if len(_activity_log) > 50:
+        _activity_log[:] = _activity_log[:50]
+
+
+def _generate_notifications() -> None:
+    """Build smart notifications from current email + calendar state."""
+    _notifications.clear()
+    now = datetime.now(timezone.utc)
+
+    # Urgent unresponded emails
+    urgent_count = sum(
+        1 for e in _emails.values()
+        if e.classification
+        and e.classification.priority.value in ("critical", "high")
+        and not e.draft_reply
+        and not e.is_read
+    )
+    if urgent_count > 0:
+        _notifications.append(Notification(
+            id=f"notif-urgent-{uuid4().hex[:6]}",
+            type="urgent_email",
+            title="Urgent emails need attention",
+            message=f"{urgent_count} {'email needs' if urgent_count == 1 else 'emails need'} a response",
+            severity="critical",
+            timestamp=now,
+        ))
+
+    # Upcoming deadlines (next 48h)
+    for ev in _calendar:
+        hours_until = (ev.start.replace(tzinfo=timezone.utc) - now).total_seconds() / 3600
+        if 0 < hours_until < 48:
+            sev = "critical" if hours_until < 6 else "warning" if hours_until < 24 else "info"
+            _notifications.append(Notification(
+                id=f"notif-cal-{ev.id}",
+                type="deadline" if ev.is_all_day else "meeting_soon",
+                title=f"{'Deadline' if ev.is_all_day else 'Upcoming'}: {ev.title}",
+                message=f"In {int(hours_until)} hours" if hours_until >= 1 else "Less than 1 hour away",
+                severity=sev,
+                related_id=ev.id,
+                related_type="event",
+                timestamp=now,
+            ))
+
+    # Unclassified emails insight
+    unclassified = sum(1 for e in _emails.values() if not e.classification)
+    if unclassified > 0:
+        _notifications.append(Notification(
+            id=f"notif-unclassified-{uuid4().hex[:6]}",
+            type="ai_insight",
+            title="Emails awaiting AI triage",
+            message=f"{unclassified} {'email has' if unclassified == 1 else 'emails have'} not been classified yet",
+            severity="info",
+            timestamp=now,
+        ))
 
 
 def _load_email_source() -> list[Email]:
@@ -109,6 +195,9 @@ def _merge_source_email(email: Email, *, source: str) -> None:
     elif email_content_hash(email) == email_content_hash(cached):
         email.classification = cached.classification
         email.draft_reply = cached.draft_reply
+        email.is_read = cached.is_read
+        email.is_starred = cached.is_starred
+        email.labels = cached.labels
         email.storage_origin = "source+cache"
     else:
         safe_record_event(
@@ -150,6 +239,9 @@ def _hydrate_email_state(email: Email) -> None:
         return
     email.classification = cached.classification
     email.draft_reply = cached.draft_reply
+    email.is_read = cached.is_read
+    email.is_starred = cached.is_starred
+    email.labels = cached.labels
     email.storage_origin = "source+cache"
 
 
@@ -225,20 +317,40 @@ def _current_inbox() -> str:
     return "mock"
 
 
-# ---- Endpoints -------------------------------------------------------------
+# ---- Email Endpoints -------------------------------------------------------
 
 
 @router.get("/emails")
-async def list_emails() -> list[dict[str, Any]]:
+async def list_emails(
+    account_id: str | None = Query(None, description="Filter by account ID"),
+) -> list[dict[str, Any]]:
     """Return all emails with their current classification (if any)."""
     _ensure_loaded()
-    return [email.model_dump(mode="json") for email in _emails.values()]
+    emails = list(_emails.values())
+    if account_id:
+        emails = [e for e in emails if e.account_id == account_id]
+    return [email.model_dump(mode="json") for email in emails]
 
 
 @router.get("/emails/{email_id}")
 async def get_email(email_id: str) -> dict[str, Any]:
     """Return a single email with full detail."""
     return _get_email(email_id).model_dump(mode="json")
+
+
+@router.get("/emails/{email_id}/thread")
+async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
+    """Return all emails sharing the same thread_id."""
+    _ensure_loaded()
+    email = _get_email(email_id)
+    thread_id = email.thread_id or email.id
+    thread = [
+        e.model_dump(mode="json")
+        for e in _emails.values()
+        if (e.thread_id or e.id) == thread_id
+    ]
+    thread.sort(key=lambda e: e.get("timestamp", ""))
+    return thread
 
 
 @router.post("/emails/{email_id}/classify")
@@ -266,13 +378,23 @@ async def classify_email(
         },
         subject_id=email.id,
     )
+    _log_activity(
+        "classified",
+        f"Email from {email.sender.split('@')[0]} classified as {result.priority.value.upper()}",
+        email.id,
+    )
     _persist_email_state(email)
     return result.model_dump(mode="json")
+
+
+class DraftRequest(BaseModel):
+    quality: str = "balanced"
 
 
 @router.post("/emails/{email_id}/draft")
 async def draft_email_reply(
     email_id: str,
+    body: DraftRequest | None = None,
     force: bool = Query(False, description="Re-run the model even if cached"),
 ) -> dict[str, Any]:
     """Generate a draft reply for an email.
@@ -280,6 +402,7 @@ async def draft_email_reply(
     The email must be classified first.
     """
     email = _get_email(email_id)
+    quality = (body.quality if body else None) or get_settings().default_draft_quality
     if email.classification is None:
         raise HTTPException(
             status_code=400,
@@ -295,6 +418,7 @@ async def draft_email_reply(
     result = await drafter.draft_reply(
         email, email.classification, _relevant_events(email)
     )
+    result.quality = quality
     email.draft_reply = result
     safe_record_event(
         "email.drafted",
@@ -303,9 +427,11 @@ async def draft_email_reply(
             "draft_reply": result.model_dump(mode="json"),
             "subject": email.subject,
             "sender": email.sender,
+            "quality": quality,
         },
         subject_id=email.id,
     )
+    _log_activity("drafted", f"Draft reply generated for '{email.subject[:40]}'", email.id)
     _persist_email_state(email)
     return result.model_dump(mode="json")
 
@@ -326,10 +452,30 @@ async def approve_draft(email_id: str) -> dict[str, str]:
         {"preview": body_preview},
         subject_id=email.id,
     )
+    _log_activity("approved", f"Draft reply approved for '{email.subject[:40]}'", email.id)
     # In a real system, this would send the email.
     email.draft_reply = None
+    email.is_read = True
     _persist_email_state(email)
     return {"status": "sent", "preview": body_preview}
+
+
+@router.post("/emails/{email_id}/star")
+async def toggle_star(email_id: str) -> dict[str, Any]:
+    """Toggle the starred state of an email."""
+    email = _get_email(email_id)
+    email.is_starred = not email.is_starred
+    _persist_email_state(email)
+    return {"id": email.id, "is_starred": email.is_starred}
+
+
+@router.post("/emails/{email_id}/read")
+async def mark_as_read(email_id: str) -> dict[str, Any]:
+    """Mark an email as read."""
+    email = _get_email(email_id)
+    email.is_read = True
+    _persist_email_state(email)
+    return {"id": email.id, "is_read": email.is_read}
 
 
 @router.post("/emails/classify-all")
@@ -355,14 +501,9 @@ async def classify_all() -> list[dict[str, Any]]:
                 "classification": result.model_dump(mode="json"),
             })
             _persist_email_state(email)
+    if results:
+        _log_activity("batch_classified", f"Batch classified {len(results)} emails")
     return results
-
-
-@router.get("/calendar")
-async def get_calendar() -> list[dict[str, Any]]:
-    """Return mock calendar events."""
-    _ensure_loaded()
-    return [ev.model_dump(mode="json") for ev in _calendar]
 
 
 @router.post("/emails/refresh")
@@ -373,7 +514,188 @@ async def refresh_emails() -> dict[str, Any]:
     """
     _emails.clear()
     _ensure_loaded()
+    _log_activity("refreshed", f"Inbox refreshed — {len(_emails)} emails loaded")
     return {"status": "refreshed", "count": len(_emails)}
+
+
+# ---- Dashboard Endpoints ---------------------------------------------------
+
+
+@router.get("/dashboard")
+async def get_dashboard() -> dict[str, Any]:
+    """Return aggregated dashboard statistics and AI-generated notifications."""
+    _ensure_loaded()
+    _generate_notifications()
+
+    emails = list(_emails.values())
+    total = len(emails)
+    unread = sum(1 for e in emails if not e.is_read)
+    classified = sum(1 for e in emails if e.classification)
+    starred = sum(1 for e in emails if e.is_starred)
+
+    priority_breakdown: dict[str, int] = {}
+    category_breakdown: dict[str, int] = {}
+    for e in emails:
+        if e.classification:
+            p = e.classification.priority.value
+            c = e.classification.category.value
+            priority_breakdown[p] = priority_breakdown.get(p, 0) + 1
+            category_breakdown[c] = category_breakdown.get(c, 0) + 1
+
+    cfg = get_settings()
+    accounts = list_accounts_summary(load_accounts(cfg.data_dir))
+    now = datetime.now(timezone.utc)
+    upcoming = get_upcoming_events(_calendar, now, window_days=7)
+
+    stats = DashboardStats(
+        total_emails=total,
+        unread_count=unread,
+        classified_count=classified,
+        starred_count=starred,
+        priority_breakdown=priority_breakdown,
+        category_breakdown=category_breakdown,
+        accounts=accounts,
+        upcoming_events=[ev.model_dump(mode="json") for ev in upcoming[:6]],
+        notifications=[n.model_dump(mode="json") for n in _notifications],
+        recent_activity=_activity_log[:8],
+        storage_stats=storage_stats(),
+    )
+    return stats.model_dump(mode="json")
+
+
+@router.get("/notifications")
+async def get_notifications() -> list[dict[str, Any]]:
+    """Return current AI-generated notifications."""
+    _ensure_loaded()
+    _generate_notifications()
+    return [n.model_dump(mode="json") for n in _notifications]
+
+
+@router.post("/notifications/{notif_id}/dismiss")
+async def dismiss_notification(notif_id: str) -> dict[str, str]:
+    """Dismiss a notification."""
+    for i, n in enumerate(_notifications):
+        if n.id == notif_id:
+            _notifications.pop(i)
+            return {"status": "dismissed"}
+    raise HTTPException(status_code=404, detail="Notification not found")
+
+
+# ---- Account Endpoints -----------------------------------------------------
+
+
+@router.get("/accounts")
+async def list_accounts() -> list[dict[str, Any]]:
+    """Return configured email accounts (no credentials)."""
+    cfg = get_settings()
+    return list_accounts_summary(load_accounts(cfg.data_dir))
+
+
+# ---- Calendar Endpoints ----------------------------------------------------
+
+
+@router.get("/calendar")
+async def get_calendar() -> list[dict[str, Any]]:
+    """Return all calendar events."""
+    _ensure_loaded()
+    return [ev.model_dump(mode="json") for ev in _calendar]
+
+
+@router.get("/calendar/upcoming")
+async def get_upcoming_calendar(
+    days: int = Query(7, ge=1, le=90),
+) -> list[dict[str, Any]]:
+    """Return upcoming calendar events within a time window."""
+    _ensure_loaded()
+    now = datetime.now(timezone.utc)
+    upcoming = get_upcoming_events(_calendar, now, window_days=days)
+    return [ev.model_dump(mode="json") for ev in upcoming]
+
+
+class CalendarEventCreate(BaseModel):
+    title: str
+    start: str
+    end: str
+    description: str = ""
+    location: str = ""
+    color: str = "#3b82f6"
+    attendees: list[str] = []
+    is_all_day: bool = False
+
+
+@router.post("/calendar/events")
+async def create_calendar_event(body: CalendarEventCreate) -> dict[str, Any]:
+    """Create a new local calendar event."""
+    _ensure_loaded()
+    event = create_event(_calendar, body.model_dump())
+    safe_store_calendar_event(event, source="user")
+    _log_activity("event_created", f"Calendar event '{event.title}' created", event.id)
+    return event.model_dump(mode="json")
+
+
+class CalendarEventUpdate(BaseModel):
+    title: str | None = None
+    start: str | None = None
+    end: str | None = None
+    description: str | None = None
+    location: str | None = None
+    color: str | None = None
+    attendees: list[str] | None = None
+    is_all_day: bool | None = None
+
+
+@router.put("/calendar/events/{event_id}")
+async def update_calendar_event(
+    event_id: str,
+    body: CalendarEventUpdate,
+) -> dict[str, Any]:
+    """Update an existing calendar event."""
+    _ensure_loaded()
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    updated = update_event(_calendar, event_id, data)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+    safe_store_calendar_event(updated, source="user")
+    return updated.model_dump(mode="json")
+
+
+@router.delete("/calendar/events/{event_id}")
+async def delete_calendar_event(event_id: str) -> dict[str, str]:
+    """Delete a calendar event."""
+    _ensure_loaded()
+    if not delete_event(_calendar, event_id):
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+    return {"status": "deleted", "event_id": event_id}
+
+
+# ---- AI Endpoints (stub for orchestration phase) ---------------------------
+
+
+class AskAIRequest(BaseModel):
+    question: str
+    context_type: str | None = None  # "email", "thread", "general"
+    context_id: str | None = None    # email_id or thread_id
+
+
+@router.post("/ai/ask")
+async def ask_ai(body: AskAIRequest) -> dict[str, Any]:
+    """Ask the AI a question about an email, thread, or general topic.
+
+    This is a stub endpoint — full orchestration is wired in the next phase.
+    """
+    return {
+        "answer": (
+            "AI orchestration will be wired in the next phase. "
+            "This endpoint will support contextual Q&A about emails, threads, "
+            "calendar events, and general productivity queries."
+        ),
+        "context_type": body.context_type,
+        "context_id": body.context_id,
+        "status": "stub",
+    }
+
+
+# ---- Storage Endpoints -----------------------------------------------------
 
 
 @router.get("/storage/stats")
@@ -400,4 +722,3 @@ async def wipe_all_storage() -> dict[str, Any]:
         email.classification = None
         email.draft_reply = None
     return {"status": "deleted", "deleted": deleted}
-

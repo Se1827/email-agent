@@ -1,0 +1,148 @@
+import { useState, useEffect, useCallback } from 'react';
+import InboxSidebar from '../components/InboxSidebar';
+import EmailList from '../components/EmailList';
+import EmailDetail from '../components/EmailDetail';
+import { fetchEmails, classifyAll, refreshInbox } from '../api';
+import './InboxPage.css';
+
+function InboxPage() {
+  const [emails, setEmails] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filters, setFilters] = useState({ priority: [], category: [], folder: 'all' });
+  const [busyAction, setBusyAction] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const loadEmails = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchEmails();
+      setEmails(data);
+    } catch (err) {
+      setError('Cannot reach the API server. Is it running on :8000?');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEmails();
+  }, [loadEmails]);
+
+  const handleRefresh = async () => {
+    setBusyAction('refresh');
+    try {
+      await refreshInbox();
+      await loadEmails();
+      setSelected(null);
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleClassifyAll = async () => {
+    setBusyAction('classify-all');
+    try {
+      await classifyAll();
+      await loadEmails();
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const updateEmail = (updatedEmail) => {
+    setEmails((prev) =>
+      prev.map((e) => (e.id === updatedEmail.id ? updatedEmail : e))
+    );
+    setSelected(updatedEmail);
+  };
+
+  // Smart folders
+  let folderFiltered = emails;
+  if (filters.folder === 'unread') {
+    folderFiltered = emails.filter(e => !e.is_read);
+  } else if (filters.folder === 'starred') {
+    folderFiltered = emails.filter(e => e.is_starred);
+  } else if (filters.folder === 'critical') {
+    folderFiltered = emails.filter(e => e.classification?.priority === 'critical' || e.classification?.priority === 'high');
+  } else if (filters.folder === 'drafts') {
+    folderFiltered = emails.filter(e => e.draft_reply);
+  }
+
+  // Search
+  let searched = folderFiltered;
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase();
+    searched = folderFiltered.filter(e =>
+      e.subject.toLowerCase().includes(q) ||
+      e.sender.toLowerCase().includes(q) ||
+      e.body.toLowerCase().includes(q)
+    );
+  }
+
+  // Priority/category filters
+  const filtered = searched.filter((e) => {
+    const cls = e.classification;
+    if (filters.priority.length > 0) {
+      if (!cls || !filters.priority.includes(cls.priority)) return false;
+    }
+    if (filters.category.length > 0) {
+      if (!cls || !filters.category.includes(cls.category)) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };
+  const sorted = [...filtered].sort((a, b) => {
+    const ca = a.classification;
+    const cb = b.classification;
+    if (ca && !cb) return -1;
+    if (!ca && cb) return 1;
+    if (ca && cb) {
+      return (priorityOrder[ca.priority] ?? 9) - (priorityOrder[cb.priority] ?? 9);
+    }
+    return new Date(b.timestamp) - new Date(a.timestamp);
+  });
+
+  return (
+    <div className="inbox-page" id="inbox-page">
+      <InboxSidebar
+        filters={filters}
+        onFiltersChange={setFilters}
+        onRefresh={handleRefresh}
+        onClassifyAll={handleClassifyAll}
+        busyAction={busyAction}
+        emailCount={emails.length}
+        classifiedCount={emails.filter((e) => e.classification).length}
+        unreadCount={emails.filter((e) => !e.is_read).length}
+        starredCount={emails.filter((e) => e.is_starred).length}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
+      <div className="inbox-content">
+        {error ? (
+          <div className="error-banner">{error}</div>
+        ) : (
+          <>
+            <EmailList
+              emails={sorted}
+              selected={selected}
+              onSelect={setSelected}
+              loading={loading}
+            />
+            <EmailDetail
+              email={selected}
+              onUpdate={updateEmail}
+              onReload={loadEmails}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default InboxPage;

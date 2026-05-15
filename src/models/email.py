@@ -28,6 +28,12 @@ class Category(str, Enum):
     SPAM = "spam"
 
 
+class DraftQuality(str, Enum):
+    QUICK = "quick"
+    BALANCED = "balanced"
+    THOROUGH = "thorough"
+
+
 # ---------------------------------------------------------------------------
 # Core models
 # ---------------------------------------------------------------------------
@@ -35,12 +41,18 @@ class Category(str, Enum):
 class Email(BaseModel):
     id: str
     inbox: Optional[str] = None
+    account_id: Optional[str] = None
     sender: str
     recipients: list[str]
     subject: str
     body: str
     timestamp: datetime
     thread_id: Optional[str] = None
+
+    # UI state.
+    is_read: bool = False
+    is_starred: bool = False
+    labels: list[str] = Field(default_factory=list)
 
     # Populated after classification.
     classification: Optional[Classification] = None
@@ -60,15 +72,64 @@ class Classification(BaseModel):
 class DraftReply(BaseModel):
     body: str
     tone: str = "professional"
+    quality: str = "balanced"
     pii_redacted: bool = False
     redacted_types: list[str] = Field(default_factory=list)
 
 
 class CalendarEvent(BaseModel):
+    id: Optional[str] = None
     title: str
     start: datetime
     end: datetime
+    description: str = ""
+    location: str = ""
+    color: str = ""
     attendees: list[str] = Field(default_factory=list)
+    account_id: Optional[str] = None
+    is_all_day: bool = False
+    recurrence: Optional[str] = None
+
+
+class Notification(BaseModel):
+    id: str
+    type: str  # "deadline", "meeting_soon", "urgent_email", "ai_insight"
+    title: str
+    message: str
+    severity: str  # "critical", "warning", "info"
+    related_id: Optional[str] = None  # email_id or event_id
+    related_type: Optional[str] = None  # "email" or "event"
+    timestamp: datetime
+    is_read: bool = False
+
+
+class DashboardStats(BaseModel):
+    total_emails: int = 0
+    unread_count: int = 0
+    classified_count: int = 0
+    starred_count: int = 0
+    priority_breakdown: dict[str, int] = Field(default_factory=dict)
+    category_breakdown: dict[str, int] = Field(default_factory=dict)
+    accounts: list[dict] = Field(default_factory=list)
+    upcoming_events: list[dict] = Field(default_factory=list)
+    notifications: list[dict] = Field(default_factory=list)
+    recent_activity: list[dict] = Field(default_factory=list)
+    storage_stats: dict = Field(default_factory=dict)
+
+
+class AccountConfig(BaseModel):
+    id: str
+    name: str
+    email: str
+    provider: str = "imap"  # gmail, outlook, imap
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_user: str = ""
+    imap_pass: str = ""
+    imap_mailbox: str = "INBOX"
+    imap_use_ssl: bool = True
+    color: str = "#3b82f6"
+    is_active: bool = True
 
 
 # Rebuild Email so the forward references resolve.
