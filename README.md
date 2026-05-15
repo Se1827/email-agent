@@ -52,6 +52,8 @@ src/
     drafter.py         – context-aware reply via LLM
     calendar.py        – mock calendar context
     pii.py             – fast regex-first privacy gateway + lazy semantic masking
+  storage.py           – encrypted PostgreSQL app storage (optional async writer)
+  observability.py     – OpenTelemetry setup and span helpers
   api/
     app.py             – FastAPI factory
     routes.py          – API endpoints
@@ -100,9 +102,63 @@ For **Gmail**, you need an [App Password](https://myaccount.google.com/apppasswo
 # Unit tests (no API key needed — LLM is mocked)
 python -m pytest tests/ -v
 
-# Evaluation against golden dataset (needs API key)
+# Offline full pipeline evaluation (LLM mocked, PII/prompt/draft checks active)
 python eval/evaluate.py
+
+# Live evaluation against the configured model
+python eval/evaluate.py --live
+
+# Include an explicit encrypted PostgreSQL write probe
+python eval/evaluate.py --live --storage-probe
 ```
+
+## Storage and Observability
+
+Encrypted PostgreSQL storage is optional and off by default. When enabled, the app stores full emails, calendar events, workflow events, LLM prompts/responses, approvals, and evaluation artifacts. Searchable metadata stays small and non-sensitive; full payloads are encrypted with `STORAGE_ENCRYPTION_KEY` before insert. Runtime writes use a background queue so storage cannot slow down classification or drafting.
+
+When storage is enabled, the API now hydrates email state from Postgres on load. Existing classifications and drafts are reused after a restart, so the LLM is not called again unless you explicitly force it:
+
+```bash
+POST /api/emails/{id}/classify?force=true
+POST /api/emails/{id}/draft?force=true
+```
+
+Storage also keeps encrypted PII token mappings, compact thread state, semantic-memory records for future RAG/pgvector retrieval, and audit events for cache hits, classifications, drafts, approvals, and model calls.
+
+For local Docker with pgvector:
+
+```bash
+docker volume create email_agent_pgdata
+
+docker run --name email-agent-postgres \
+  -e POSTGRES_USER=email_agent \
+  -e POSTGRES_PASSWORD=email_agent \
+  -e POSTGRES_DB=email_agent \
+  -p 5432:5432 \
+  -v email_agent_pgdata:/var/lib/postgresql/data \
+  -d pgvector/pgvector:pg16
+```
+
+Then set:
+
+```env
+STORAGE_ENABLED=true
+DATABASE_URL=postgresql://email_agent:email_agent@localhost:5432/email_agent
+STORAGE_ENCRYPTION_KEY=<generated-fernet-key>
+```
+
+Storage admin helpers:
+
+```bash
+python scripts/storage_admin.py init
+python scripts/storage_admin.py stats
+python scripts/storage_admin.py wipe-email <email_id>
+python scripts/storage_admin.py wipe-all
+```
+
+OpenTelemetry is optional and off by default. Set `OTEL_ENABLED=true` to instrument FastAPI and local spans. If `OTEL_EXPORTER_OTLP_ENDPOINT` is empty, spans go to console; otherwise they are exported over OTLP HTTP.
+
+Evaluation writes two artifacts per run in `eval/reports/`: a Markdown report for human review and a JSON report for automation. Each case includes the input email, PII mappings, masked body, exact prompt sent to the LLM, raw LLM output, parsed classification, draft, privacy checks, and storage diagnostics. Live eval separates must-pass checks (classification + privacy + prompt capture) from review checks (draft wording), so correct model behavior is not marked failed just because the draft uses different phrasing.
 
 ## Adding a New Connector
 
@@ -129,3 +185,9 @@ The rest of the pipeline (classification, drafting, PII redaction) works unchang
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `API_PORT` | `8000` | FastAPI port |
 | `UI_PORT` | `8501` | Streamlit port |
+| `STORAGE_ENABLED` | `false` | Enable encrypted PostgreSQL storage |
+| `DATABASE_URL` | -- | PostgreSQL connection string |
+| `STORAGE_ENCRYPTION_KEY` | -- | Fernet key for app-side payload encryption |
+| `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |
+| `OTEL_SERVICE_NAME` | `email-agent` | Service name for traces |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | -- | Optional OTLP HTTP collector endpoint |

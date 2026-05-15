@@ -35,6 +35,16 @@ class Settings:
     imap_use_ssl: bool
     imap_fetch_limit: int
 
+    # Optional encrypted PostgreSQL storage.
+    database_url: str
+    storage_encryption_key: str
+    storage_enabled: bool
+
+    # Optional OpenTelemetry tracing.
+    otel_enabled: bool
+    otel_service_name: str
+    otel_exporter_otlp_endpoint: str
+
     @classmethod
     def from_env(cls) -> Settings:
         api_key = os.getenv("GROQ_API_KEY", "")
@@ -58,6 +68,12 @@ class Settings:
             imap_mailbox=os.getenv("IMAP_MAILBOX", "INBOX"),
             imap_use_ssl=os.getenv("IMAP_USE_SSL", "true").lower() == "true",
             imap_fetch_limit=int(os.getenv("IMAP_FETCH_LIMIT", "20")),
+            database_url=os.getenv("DATABASE_URL", ""),
+            storage_encryption_key=os.getenv("STORAGE_ENCRYPTION_KEY", ""),
+            storage_enabled=os.getenv("STORAGE_ENABLED", "false").lower() == "true",
+            otel_enabled=os.getenv("OTEL_ENABLED", "false").lower() == "true",
+            otel_service_name=os.getenv("OTEL_SERVICE_NAME", "email-agent"),
+            otel_exporter_otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
         )
 
 
