@@ -528,6 +528,30 @@ async def classify(
     )
 
     parsed = _parse_classification(raw)
+
+    # Append conflict/availability note to reasoning so the UI shows it
+    if _cs is not None and relevant_events:
+        conflict = has_calendar_conflict(
+            # Build a minimal stand-in event for the candidate time
+            CalendarEvent(
+                id="__candidate__",
+                title="Proposed meeting",
+                start=_cs,
+                end=_ce or (_cs + timedelta(hours=1)),
+            ),
+            relevant_events,
+        )
+        if conflict:
+            parsed.reasoning = (
+                f"{parsed.reasoning} — "
+                f"You will NOT be available at that time: conflict with \"{conflict.title}\""
+            )
+        else:
+            parsed.reasoning = (
+                f"{parsed.reasoning} — "
+                f"You ARE available at the proposed time."
+            )
+
     safe_store_pii_mappings(email.id, "classification", privacy.mappings)
     log.info(
         "classified",
