@@ -10,6 +10,8 @@ Key design decisions:
     false positives from "On Saturday, 05/16/26 at 01:18 ... wrote:"
   - Bare ordinals ("19th", "20th") infer the month from the email date
   - Meeting/critical emails auto-create calendar events for availability
+  - Auto-created events are skipped if a conflicting event already exists
+    on the same day and overlapping time window
 """
 
 from __future__ import annotations
@@ -54,13 +56,12 @@ def _strip_quoted_text(body: str) -> str:
     the date extractor would pick up as false positives. We strip everything
     after common reply markers.
     """
-    # Split on common reply separators
     separators = [
-        r"^-{3,}\s*Original\s+Message\s*-{3,}",  # -------- Original Message --------
-        r"^On\s+\w+,\s+\d{1,2}/\d{1,2}/\d{2,4}\s+at\s+",  # On Saturday, 05/16/26 at
-        r"^On\s+\w+,\s+\w+\s+\d{1,2},\s+\d{4}\s+at\s+",  # On Fri, May 15, 2026 at
-        r"^>",  # Standard quote lines
-        r"^Sent from \[",  # "Sent from [Proton Mail]..."
+        r"^-{3,}\s*Original\s+Message\s*-{3,}",
+        r"^On\s+\w+,\s+\d{1,2}/\d{1,2}/\d{2,4}\s+at\s+",
+        r"^On\s+\w+,\s+\w+\s+\d{1,2},\s+\d{4}\s+at\s+",
+        r"^>",
+        r"^Sent from \[",
     ]
     lines = body.splitlines()
     clean_lines: list[str] = []
@@ -72,7 +73,7 @@ def _strip_quoted_text(body: str) -> str:
                 is_quote = True
                 break
         if is_quote:
-            break  # Stop at first quote marker — everything after is reply chain
+            break
         clean_lines.append(line)
     return "\n".join(clean_lines)
 
@@ -80,21 +81,12 @@ def _strip_quoted_text(body: str) -> str:
 # ── Date extraction from natural language ──────────────────────────────────
 
 def _extract_dates_from_text(text: str, reference_date: datetime) -> list[datetime]:
-    """Extract date references from email text.
-
-    Handles:
-      - "20 may", "may 20", "20th may", "may 20th"
-      - "20th", "19th" (bare ordinals — infer month from reference_date)
-      - "20/05", "05/20", "2026-05-20"
-      - "today", "tomorrow", "day after tomorrow"
-      - Day names: "monday", "tuesday", etc.
-    """
+    """Extract date references from email text."""
     text_lower = text.lower()
     found: list[datetime] = []
     ref_year = reference_date.year
     ref_month = reference_date.month
 
-    # ── Pattern 1: "20 may", "20th may", "20th of may" ──
     ordinal_with_month = set()
     for m in re.finditer(
         r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?("
@@ -103,13 +95,12 @@ def _extract_dates_from_text(text: str, reference_date: datetime) -> list[dateti
         text_lower,
     ):
         day, month_name = int(m.group(1)), _MONTH_MAP[m.group(2)]
-        ordinal_with_month.add(m.group(1))  # Track which numbers had month names
+        ordinal_with_month.add(m.group(1))
         try:
             found.append(datetime(ref_year, month_name, day))
         except ValueError:
             pass
 
-    # ── Pattern 2: "may 20", "may 20th" ──
     for m in re.finditer(
         r"\b(" + "|".join(_MONTH_MAP.keys()) + r")\s+(\d{1,2})(?:st|nd|rd|th)?\b",
         text_lower,
@@ -121,18 +112,14 @@ def _extract_dates_from_text(text: str, reference_date: datetime) -> list[dateti
         except ValueError:
             pass
 
-    # ── Pattern 3: Bare ordinals "19th", "20th" (no month name) ──
-    #     Infer the month from the email's reference date.
     for m in re.finditer(r"\b(\d{1,2})(st|nd|rd|th)\b", text_lower):
         day_str = m.group(1)
         if day_str in ordinal_with_month:
-            continue  # Already matched with a month name above
+            continue
         day = int(day_str)
         if 1 <= day <= 31:
             try:
-                # Try current month first
                 candidate = datetime(ref_year, ref_month, day)
-                # If the date is in the past, try next month
                 if candidate.date() < reference_date.date():
                     next_month = ref_month + 1 if ref_month < 12 else 1
                     next_year = ref_year if ref_month < 12 else ref_year + 1
@@ -141,14 +128,12 @@ def _extract_dates_from_text(text: str, reference_date: datetime) -> list[dateti
             except ValueError:
                 pass
 
-    # ── Pattern 4: ISO-style "2026-05-20" ──
     for m in re.finditer(r"\b(\d{4})-(\d{2})-(\d{2})\b", text_lower):
         try:
             found.append(datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))))
         except ValueError:
             pass
 
-    # ── Pattern 5: "today", "tomorrow", "day after tomorrow" ──
     if re.search(r"\btoday\b", text_lower):
         found.append(reference_date.replace(hour=0, minute=0, second=0, microsecond=0))
     if re.search(r"\btomorrow\b", text_lower):
@@ -156,7 +141,6 @@ def _extract_dates_from_text(text: str, reference_date: datetime) -> list[dateti
     if re.search(r"\bday after tomorrow\b", text_lower):
         found.append((reference_date + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0))
 
-    # ── Pattern 6: Day names → next occurrence ──
     day_names = {
         "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
         "friday": 4, "saturday": 5, "sunday": 6,
@@ -177,7 +161,6 @@ def _extract_time_from_text(text: str) -> tuple[int, int] | None:
     """Extract a time reference like '4pm', '4:30pm', '16:00' from text."""
     text_lower = text.lower()
 
-    # "4pm", "4 pm", "4:30pm"
     m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text_lower)
     if m:
         hour = int(m.group(1))
@@ -188,7 +171,6 @@ def _extract_time_from_text(text: str) -> tuple[int, int] | None:
             hour = 0
         return (hour, minute)
 
-    # "16:00", "14:30"
     m = re.search(r"\b(\d{1,2}):(\d{2})\b", text_lower)
     if m:
         hour, minute = int(m.group(1)), int(m.group(2))
@@ -202,7 +184,6 @@ def _extract_time_from_text(text: str) -> tuple[int, int] | None:
 
 def _email_mentions_time_or_dates(email: Email) -> bool:
     """Check if the email body references times, dates, or meeting concepts."""
-    # Use ONLY the non-quoted part of the email
     clean_body = _strip_quoted_text(email.body)
     text = f"{email.subject} {clean_body}".lower()
 
@@ -213,9 +194,8 @@ def _email_mentions_time_or_dates(email: Email) -> bool:
         r"\b\d{1,2}:\d{2}\b",
         r"\b\d{1,2}(am|pm)\b",
         r"\b(schedule|calendar|appointment|event|free|available|busy)\b",
-        r"\b\d{1,2}(st|nd|rd|th)\b",  # Bare ordinals like "19th"
+        r"\b\d{1,2}(st|nd|rd|th)\b",
     ]
-    # Month names
     month_pattern = r"\b(" + "|".join(_MONTH_MAP.keys()) + r")\b"
     patterns.append(month_pattern)
 
@@ -223,11 +203,7 @@ def _email_mentions_time_or_dates(email: Email) -> bool:
 
 
 def _date_overlap(email: Email, event: CalendarEvent) -> bool:
-    """Check if dates mentioned in the email match the event date.
-
-    IMPORTANT: We strip quoted text before extracting dates to avoid
-    false positives from reply chain headers like "On Saturday, 05/16/26".
-    """
+    """Check if dates mentioned in the email match the event date."""
     clean_body = _strip_quoted_text(email.body)
     text = f"{email.subject} {clean_body}"
     mentioned_dates = _extract_dates_from_text(text, email.timestamp)
@@ -245,11 +221,7 @@ def _attendee_overlap(email: Email, event: CalendarEvent) -> bool:
 
 
 def _keyword_overlap(email: Email, event: CalendarEvent) -> bool:
-    """Check if meaningful keywords from the email match the event.
-
-    Uses ONLY the non-quoted part of the email to avoid false matches
-    from reply chain content.
-    """
+    """Check if meaningful keywords from the email match the event."""
     stop_words = {
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
         "have", "has", "had", "do", "does", "did", "will", "would", "could",
@@ -278,16 +250,7 @@ def filter_relevant_events(
     email: Email,
     events: list[CalendarEvent],
 ) -> list[CalendarEvent]:
-    """Return only calendar events that are relevant to this email.
-
-    Relevance is determined by (in priority order):
-    1. Date overlap — email mentions a date that matches an event date
-    2. Attendee overlap — sender/recipients appear in event attendees
-    3. Keyword overlap — shared meaningful words between email and event
-
-    Gate: if the email doesn't mention any time/date/meeting concepts,
-    no events are injected at all.
-    """
+    """Return only calendar events that are relevant to this email."""
     if not events:
         return []
 
@@ -340,14 +303,83 @@ def _format_relevant_context(events: list[CalendarEvent]) -> str:
     return "\n".join(lines)
 
 
+# ── Conflict detection ────────────────────────────────────────────────────
+
+def _as_utc(dt: datetime) -> datetime:
+    """Return a timezone-aware datetime, assuming UTC if naive."""
+    from datetime import timezone
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def has_calendar_conflict(
+    candidate: CalendarEvent,
+    existing_events: list[CalendarEvent],
+) -> CalendarEvent | None:
+    """Return the first existing event that conflicts with the candidate.
+
+    Conflict = same day AND time ranges overlap (or both are all-day).
+    Returns None if no conflict found.
+    """
+    candidate_start = _as_utc(candidate.start)
+    candidate_end = _as_utc(candidate.end) if candidate.end else candidate_start + timedelta(hours=1)
+
+    for event in existing_events:
+        # Skip auto-generated events with the same source email — already checked upstream
+        if event.id == candidate.id:
+            continue
+
+        event_start = _as_utc(event.start)
+        event_end = _as_utc(event.end) if event.end else event_start + timedelta(hours=1)
+
+        # Must be on the same calendar date
+        if event_start.date() != candidate_start.date():
+            continue
+
+        # All-day events conflict with anything on the same day
+        if event.is_all_day or candidate.is_all_day:
+            log.info(
+                "calendar_conflict_detected",
+                extra={
+                    "candidate_id": candidate.id,
+                    "conflicting_event_id": event.id,
+                    "conflicting_event_title": event.title,
+                    "reason": "all_day_overlap",
+                },
+            )
+            return event
+
+        # Timed events: overlap when one starts before the other ends
+        # (standard interval overlap: start_A < end_B AND start_B < end_A)
+        if candidate_start < event_end and event_start < candidate_end:
+            log.info(
+                "calendar_conflict_detected",
+                extra={
+                    "candidate_id": candidate.id,
+                    "conflicting_event_id": event.id,
+                    "conflicting_event_title": event.title,
+                    "reason": "time_overlap",
+                    "candidate_window": f"{candidate_start.isoformat()}–{candidate_end.isoformat()}",
+                    "existing_window": f"{event_start.isoformat()}–{event_end.isoformat()}",
+                },
+            )
+            return event
+
+    return None
+
+
 # ── Auto-event creation from meeting emails ───────────────────────────────
 
-def extract_meeting_event(email: Email, classification: Classification) -> CalendarEvent | None:
+def extract_meeting_event(
+    email: Email,
+    classification: Classification,
+    existing_events: list[CalendarEvent] | None = None,
+) -> CalendarEvent | None:
     """Extract a calendar event from a classified meeting email.
 
-    If the email is classified as a meeting and mentions dates/times,
-    auto-create a calendar event so the user's calendar reflects their
-    availability. Returns None if no date can be extracted.
+    Returns None if:
+    - The email is not classified as a meeting
+    - No date can be extracted from the body
+    - A conflicting event already exists on the same day/time
     """
     if classification.category.value != "meeting":
         return None
@@ -359,15 +391,13 @@ def extract_meeting_event(email: Email, classification: Classification) -> Calen
     if not dates:
         return None
 
-    # Use the most likely date (first found from the non-quoted text)
     meeting_date = dates[0]
 
-    # Try to extract a time
     time_info = _extract_time_from_text(text)
     if time_info:
         hour, minute = time_info
         meeting_start = meeting_date.replace(hour=hour, minute=minute)
-        meeting_end = meeting_start + timedelta(hours=1)  # Default 1hr
+        meeting_end = meeting_start + timedelta(hours=1)
         is_all_day = False
     else:
         meeting_start = meeting_date
@@ -375,16 +405,34 @@ def extract_meeting_event(email: Email, classification: Classification) -> Calen
         is_all_day = True
 
     sender_name = email.sender.split("@")[0].replace(".", " ").title()
-    return CalendarEvent(
+    candidate = CalendarEvent(
         id=f"auto-{email.id[:12]}",
         title=f"Meeting: {sender_name} — {email.subject[:40]}",
         start=meeting_start,
         end=meeting_end,
         description=f"Auto-created from email: {email.subject}\nFrom: {email.sender}",
-        color="#f59e0b",  # Amber for auto-created
+        color="#f59e0b",
         attendees=[email.sender] + email.recipients[:5],
         is_all_day=is_all_day,
     )
+
+    # ── Conflict check ────────────────────────────────────────────────────
+    if existing_events:
+        conflict = has_calendar_conflict(candidate, existing_events)
+        if conflict:
+            log.info(
+                "auto_event_skipped_conflict",
+                extra={
+                    "email_id": email.id,
+                    "candidate_title": candidate.title,
+                    "candidate_start": meeting_start.isoformat(),
+                    "conflicting_event": conflict.title,
+                    "conflicting_start": conflict.start.isoformat(),
+                },
+            )
+            return None
+
+    return candidate
 
 
 # ── Classification ─────────────────────────────────────────────────────────
@@ -393,10 +441,7 @@ async def classify(
     email: Email,
     calendar_events: list[CalendarEvent] | None = None,
 ) -> Classification:
-    """Classify an email by priority and category.
-
-    Uses smart filtering to only inject relevant calendar context.
-    """
+    """Classify an email by priority and category."""
     privacy = PrivacyGateway()
 
     relevant_events = filter_relevant_events(email, calendar_events or [])
