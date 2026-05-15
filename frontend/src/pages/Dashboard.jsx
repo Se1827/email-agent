@@ -274,7 +274,9 @@ function Dashboard() {
                   </div>
                   <div className="account-info">
                     <div className="account-name">{acc.name}</div>
-                    <div className="account-email">{acc.email}</div>
+                    <div className="account-email">
+                      {acc.email} · {acc.email_count || 0} emails
+                    </div>
                   </div>
                   <div className={`account-status ${acc.is_active ? 'active' : ''}`} />
                 </div>

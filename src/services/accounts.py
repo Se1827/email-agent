@@ -7,15 +7,26 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from src.models.email import AccountConfig
+from src.services.inbox_identity import canonicalize_inbox
 
 log = logging.getLogger(__name__)
 
 
 def _stable_account_id(email: str) -> str:
     """Deterministic account ID from email address."""
-    return hashlib.sha256(email.strip().lower().encode()).hexdigest()[:12]
+    normalized = email.strip().lower()
+    if not normalized:
+        return f"account-{uuid4().hex[:8]}"
+    return hashlib.sha256(normalized.encode()).hexdigest()[:12]
+
+
+def account_inbox(account: AccountConfig) -> str:
+    """Return the storage inbox scope for an account."""
+    fallback = f"{account.provider}:{account.id}:{account.imap_mailbox}"
+    return canonicalize_inbox(account.email or account.imap_user, fallback=fallback)
 
 
 def load_accounts(data_dir: Path) -> list[AccountConfig]:
@@ -27,7 +38,7 @@ def load_accounts(data_dir: Path) -> list[AccountConfig]:
     accounts_file = data_dir / "accounts.json"
     if accounts_file.exists():
         try:
-            with open(accounts_file) as f:
+            with open(accounts_file, encoding="utf-8") as f:
                 raw = json.load(f)
             accounts = []
             for entry in raw:
@@ -40,6 +51,16 @@ def load_accounts(data_dir: Path) -> list[AccountConfig]:
             log.exception("accounts_load_failed")
 
     return _default_account_from_env()
+
+
+def save_accounts(data_dir: Path, accounts: list[AccountConfig]) -> None:
+    """Persist account configs to accounts.json."""
+    accounts_file = data_dir / "accounts.json"
+    accounts_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = [account.model_dump(mode="json") for account in accounts]
+    with open(accounts_file, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=4)
+        f.write("\n")
 
 
 def _default_account_from_env() -> list[AccountConfig]:
@@ -89,8 +110,14 @@ def list_accounts_summary(accounts: list[AccountConfig]) -> list[dict[str, Any]]
             "name": a.name,
             "email": a.email,
             "provider": a.provider,
+            "imap_host": a.imap_host,
+            "imap_port": a.imap_port,
+            "imap_user": a.imap_user,
+            "imap_mailbox": a.imap_mailbox,
+            "imap_use_ssl": a.imap_use_ssl,
             "color": a.color,
             "is_active": a.is_active,
+            "has_password": bool(a.imap_pass),
         }
         for a in accounts
     ]

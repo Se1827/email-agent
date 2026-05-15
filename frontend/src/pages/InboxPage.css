@@ -2,10 +2,114 @@
   display: flex;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 .inbox-content {
   flex: 1;
   display: flex;
   overflow: hidden;
+}
+
+.account-switcher {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 20;
+}
+
+.account-switcher-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 3px 7px 3px 3px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  background: rgba(22, 24, 34, 0.9);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+
+.account-switcher-button:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.account-switcher-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.account-switcher-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 250px;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-lg);
+}
+
+.account-switcher-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-switcher-item:hover,
+.account-switcher-item.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.account-switcher-item span:last-child {
+  min-width: 0;
+}
+
+.account-switcher-item strong,
+.account-switcher-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-switcher-item strong {
+  font-size: 13px;
+}
+
+.account-switcher-item small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.account-switcher-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--accent);
+}
+
+.account-switcher-dot.all {
+  background: var(--gradient-cool);
 }

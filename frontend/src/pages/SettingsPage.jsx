@@ -1,18 +1,44 @@
 import { useState, useEffect } from 'react';
 import {
   Settings, Shield, Database, Activity, Link2,
-  Server, Eye, Lock, Wifi, WifiOff, ExternalLink
+  Server, Eye, Lock, Wifi, WifiOff, ExternalLink,
+  Plus, Save, Trash2, X, Pencil
 } from 'lucide-react';
-import { fetchAccounts, fetchStorageStats } from '../api';
+import {
+  createAccount,
+  deleteAccount,
+  fetchAccounts,
+  fetchStorageStats,
+  updateAccount,
+} from '../api';
 import './SettingsPage.css';
+
+const EMPTY_ACCOUNT = {
+  name: '',
+  email: '',
+  provider: 'imap',
+  imap_host: '',
+  imap_port: 993,
+  imap_user: '',
+  imap_pass: '',
+  imap_mailbox: 'INBOX',
+  imap_use_ssl: true,
+  color: '#3b82f6',
+  is_active: true,
+};
 
 function SettingsPage() {
   const [accounts, setAccounts] = useState([]);
   const [storage, setStorage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_ACCOUNT);
+  const [saving, setSaving] = useState(false);
+  const [accountError, setAccountError] = useState(null);
 
-  useEffect(() => {
-    Promise.all([
+  const loadSettings = () => {
+    setLoading(true);
+    return Promise.all([
       fetchAccounts().catch(() => []),
       fetchStorageStats().catch(() => null),
     ]).then(([acc, stor]) => {
@@ -20,7 +46,76 @@ function SettingsPage() {
       setStorage(stor);
       setLoading(false);
     });
+  };
+
+  useEffect(() => {
+    loadSettings();
   }, []);
+
+  const startCreate = () => {
+    setEditingId('new');
+    setForm(EMPTY_ACCOUNT);
+    setAccountError(null);
+  };
+
+  const startEdit = (account) => {
+    setEditingId(account.id);
+    setForm({
+      ...EMPTY_ACCOUNT,
+      ...account,
+      imap_pass: '',
+    });
+    setAccountError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm(EMPTY_ACCOUNT);
+    setAccountError(null);
+  };
+
+  const setField = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setAccountError(null);
+    try {
+      const payload = {
+        ...form,
+        imap_port: Number(form.imap_port) || 993,
+        imap_user: form.imap_user || form.email,
+      };
+      if (editingId === 'new') {
+        await createAccount(payload);
+      } else {
+        await updateAccount(editingId, payload);
+      }
+      await loadSettings();
+      cancelEdit();
+    } catch (err) {
+      setAccountError(err.message || 'Could not save account.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (account) => {
+    if (!account) return;
+    setSaving(true);
+    setAccountError(null);
+    try {
+      await deleteAccount(account.id);
+      await loadSettings();
+      if (editingId === account.id) cancelEdit();
+    } catch (err) {
+      setAccountError(err.message || 'Could not delete account.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="settings-page" id="settings-page">
@@ -35,10 +130,14 @@ function SettingsPage() {
           <div className="settings-card-header">
             <Server size={18} />
             <h2>Email Accounts</h2>
+            <button className="btn btn-secondary settings-card-action" onClick={startCreate}>
+              <Plus size={14} /> Add
+            </button>
           </div>
           <p className="settings-card-desc">
-            Configured IMAP accounts. Add accounts by editing <code>data/accounts.json</code>.
+            Add mock or IMAP accounts here. Active accounts are loaded into the inbox and stored with separate encrypted inbox scopes.
           </p>
+          {accountError && <div className="settings-error">{accountError}</div>}
           <div className="settings-accounts-list">
             {accounts.map((acc) => (
               <div key={acc.id} className="settings-account-row">
@@ -48,6 +147,11 @@ function SettingsPage() {
                 <div className="settings-account-info">
                   <div className="settings-account-name">{acc.name}</div>
                   <div className="settings-account-email">{acc.email}</div>
+                  {acc.provider !== 'mock' && (
+                    <div className="settings-account-meta">
+                      {acc.imap_host || 'No host'} · {acc.imap_mailbox || 'INBOX'}
+                    </div>
+                  )}
                 </div>
                 <div className="settings-account-tags">
                   <span className="settings-tag">{acc.provider}</span>
@@ -57,9 +161,91 @@ function SettingsPage() {
                     <span className="settings-tag settings-tag-inactive"><WifiOff size={10} /> Inactive</span>
                   )}
                 </div>
+                <button className="btn-icon" onClick={() => startEdit(acc)} title="Edit account">
+                  <Pencil size={14} />
+                </button>
               </div>
             ))}
+            {!loading && accounts.length === 0 && (
+              <div className="settings-empty">No accounts configured yet.</div>
+            )}
           </div>
+
+          {editingId && (
+            <form className="account-editor" onSubmit={handleSave}>
+              <div className="account-editor-header">
+                <strong>{editingId === 'new' ? 'Add account' : 'Edit account'}</strong>
+                <button type="button" className="btn-icon" onClick={cancelEdit}>
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="account-form-grid">
+                <label>
+                  Name
+                  <input className="input" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+                </label>
+                <label>
+                  Email
+                  <input className="input" type="email" value={form.email} onChange={(e) => setField('email', e.target.value)} required />
+                </label>
+                <label>
+                  Provider
+                  <select className="select" value={form.provider} onChange={(e) => setField('provider', e.target.value)}>
+                    <option value="imap">IMAP</option>
+                    <option value="gmail">Gmail IMAP</option>
+                    <option value="outlook">Outlook IMAP</option>
+                    <option value="mock">Mock</option>
+                  </select>
+                </label>
+                <label>
+                  Color
+                  <input className="input" type="color" value={form.color} onChange={(e) => setField('color', e.target.value)} />
+                </label>
+                {form.provider !== 'mock' && (
+                  <>
+                    <label>
+                      IMAP host
+                      <input className="input" value={form.imap_host} onChange={(e) => setField('imap_host', e.target.value)} placeholder="imap.gmail.com" />
+                    </label>
+                    <label>
+                      Port
+                      <input className="input" type="number" value={form.imap_port} onChange={(e) => setField('imap_port', e.target.value)} />
+                    </label>
+                    <label>
+                      Username
+                      <input className="input" value={form.imap_user} onChange={(e) => setField('imap_user', e.target.value)} placeholder={form.email} />
+                    </label>
+                    <label>
+                      Password
+                      <input className="input" type="password" value={form.imap_pass} onChange={(e) => setField('imap_pass', e.target.value)} placeholder={editingId === 'new' ? 'App password' : 'Leave blank to keep existing'} />
+                    </label>
+                    <label>
+                      Mailbox
+                      <input className="input" value={form.imap_mailbox} onChange={(e) => setField('imap_mailbox', e.target.value)} />
+                    </label>
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={form.imap_use_ssl} onChange={(e) => setField('imap_use_ssl', e.target.checked)} />
+                      Use SSL
+                    </label>
+                  </>
+                )}
+                <label className="checkbox-row">
+                  <input type="checkbox" checked={form.is_active} onChange={(e) => setField('is_active', e.target.checked)} />
+                  Active in inbox
+                </label>
+              </div>
+              <div className="account-editor-actions">
+                {editingId !== 'new' && (
+                  <button type="button" className="btn btn-secondary" onClick={() => handleDelete(accounts.find((a) => a.id === editingId))} disabled={saving}>
+                    <Trash2 size={14} /> Delete
+                  </button>
+                )}
+                <button className="btn btn-primary" disabled={saving}>
+                  <Save size={14} /> {saving ? 'Saving...' : 'Save account'}
+                </button>
+              </div>
+            </form>
+          )}
         </section>
 
         {/* PII Protection */}
