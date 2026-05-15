@@ -98,6 +98,7 @@ def fetch_emails(
     mailbox: str = "INBOX",
     limit: int = 20,
     use_ssl: bool = True,
+    inbox: str | None = None,
 ) -> list[Email]:
     """Connect to an IMAP server and fetch the latest emails.
 
@@ -149,6 +150,7 @@ def fetch_emails(
 
             emails.append(Email(
                 id=_stable_id(msg_id, subject, str(date)),
+                inbox=inbox,
                 sender=sender,
                 recipients=recipients,
                 subject=subject,
