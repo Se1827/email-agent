@@ -125,6 +125,10 @@ POST /api/emails/{id}/draft?force=true
 
 Storage also keeps encrypted PII token mappings, compact thread state, semantic-memory records for future RAG/pgvector retrieval, and audit events for cache hits, classifications, drafts, approvals, and model calls.
 
+Email loading defaults to `EMAIL_LOAD_MODE=db_then_source`: saved emails are loaded from encrypted storage first, then the active source (`mock` or `imap`) is fetched and merged in. If the source returns an email with the same ID and unchanged content, cached classification/draft state is kept. If the source email content changed, the fresh email replaces the cached copy and stale classification/draft state is cleared.
+
+Stored email cache is scoped by a provider-aware `inbox` identity. Gmail and Googlemail inboxes normalize dots and plus tags (`x.y+test@gmail.com` and `xy@gmail.com` share one cache), while other domains keep dots meaningful (`x.y@example.com` and `xy@example.com` stay separate). The raw inbox value is not stored in searchable metadata; storage uses an inbox hash and an inbox-scoped email record key.
+
 For local Docker with pgvector:
 
 ```bash
@@ -187,6 +191,7 @@ The rest of the pipeline (classification, drafting, PII redaction) works unchang
 | `GROQ_API_KEY` | -- | Your Groq key |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Chat model to use |
 | `EMAIL_SOURCE` | `mock` | `mock` or `imap` |
+| `EMAIL_LOAD_MODE` | `db_then_source` | `source_only`, `db_then_source`, or `db_only` |
 | `IMAP_HOST` | -- | IMAP server address |
 | `IMAP_PORT` | `993` | IMAP port |
 | `IMAP_USER` | -- | Email address / username |

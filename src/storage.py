@@ -192,16 +192,19 @@ def init_storage() -> None:
 def store_email(email: Any, *, source: str) -> StoredRecord | None:
     """Persist a full email payload encrypted, with efficient metadata."""
     payload = email.model_dump(mode="json") if hasattr(email, "model_dump") else dict(email)
+    inbox = payload.get("inbox") or source
     metadata = {
+        "inbox_hash": _stable_hash(inbox),
         "sender_hash": _stable_hash(payload.get("sender", "")),
         "subject_hash": _stable_hash(payload.get("subject", "")),
+        "content_hash": email_content_hash(payload),
         "recipient_count": len(payload.get("recipients", []) or []),
         "has_classification": bool(payload.get("classification")),
         "has_draft": bool(payload.get("draft_reply")),
     }
     return upsert_record(
         "email",
-        record_id=payload["id"],
+        record_id=email_record_id(payload["id"], inbox),
         payload=payload,
         email_id=payload["id"],
         thread_id=payload.get("thread_id"),
@@ -211,9 +214,61 @@ def store_email(email: Any, *, source: str) -> StoredRecord | None:
     )
 
 
-def load_email_state(email_id: str) -> dict[str, Any] | None:
+def load_email_state(email_id: str, *, inbox: str | None = None) -> dict[str, Any] | None:
     """Return the latest encrypted email payload for cache hydration."""
+    if inbox:
+        return load_record_payload("email", email_record_id(email_id, inbox))
     return load_record_payload("email", email_id)
+
+
+def load_email_states(
+    *,
+    inbox: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return decrypted saved email payloads, newest first."""
+    if not storage_configured():
+        return []
+    _require_psycopg()
+
+    sql = """
+        SELECT ciphertext
+        FROM encrypted_records
+        WHERE record_type = 'email'
+    """
+    params: list[Any] = []
+    if inbox:
+        sql += " AND metadata->>'inbox_hash' = %s"
+        params.append(_stable_hash(inbox))
+    sql += " ORDER BY occurred_at DESC"
+    if limit is not None:
+        sql += " LIMIT %s"
+        params.append(max(1, limit))
+
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+    return [decrypt_payload(row[0], _encryption_key()) for row in rows]
+
+
+def email_content_hash(email: Any) -> str:
+    """Stable hash of fields that affect classification/drafting."""
+    payload = email.model_dump(mode="json") if hasattr(email, "model_dump") else dict(email)
+    content = {
+        "sender": payload.get("sender", ""),
+        "recipients": sorted(payload.get("recipients", []) or []),
+        "subject": payload.get("subject", ""),
+        "body": payload.get("body", ""),
+        "timestamp": str(payload.get("timestamp", "")),
+        "thread_id": payload.get("thread_id"),
+    }
+    return _stable_hash(json.dumps(content, sort_keys=True, default=str))
+
+
+def email_record_id(email_id: str, inbox: str) -> str:
+    """Storage record id scoped to one inbox without leaking the inbox value."""
+    return _stable_hash(f"{inbox}:{email_id}")
 
 
 def store_pii_mappings(

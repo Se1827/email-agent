@@ -26,6 +26,8 @@ class Settings:
 
     # Email source: "mock" (use seed JSON) or "imap" (connect to real mailbox)
     email_source: str
+    # Email load mode: source_only, db_then_source, or db_only
+    email_load_mode: str
 
     # IMAP settings (only needed when email_source == "imap")
     imap_host: str
@@ -63,6 +65,7 @@ class Settings:
             data_dir=PROJECT_ROOT / "data",
             pii_mode=os.getenv("PII_MODE", "strict_presidio"),
             email_source=os.getenv("EMAIL_SOURCE", "mock"),
+            email_load_mode=os.getenv("EMAIL_LOAD_MODE", "db_then_source"),
             imap_host=os.getenv("IMAP_HOST", ""),
             imap_port=int(os.getenv("IMAP_PORT", "993")),
             imap_user=os.getenv("IMAP_USER", ""),
