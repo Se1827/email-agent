@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Inbox, Calendar, Settings, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Inbox, Calendar, Settings } from 'lucide-react';
 import './AppNav.css';
 
 const NAV_ITEMS = [
@@ -16,7 +16,7 @@ function AppNav() {
     <nav className="app-nav" id="app-nav">
       <div className="nav-brand">
         <div className="nav-brand-icon">
-          <Sparkles size={20} />
+          <img src="/icon.png" alt="Email Agent Logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
         </div>
         <div className="nav-brand-text">
           <span className="nav-brand-name">Email Agent</span>
