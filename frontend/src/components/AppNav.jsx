@@ -16,7 +16,7 @@ function AppNav() {
     <nav className="app-nav" id="app-nav">
       <div className="nav-brand">
         <div className="nav-brand-icon">
-          <img src="/icon.png" alt="Email Agent Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src="/icon.png" alt="Email Agent Logo" style={{ width: 35, height: 35, objectFit: 'contain' }} />
         </div>
         <div className="nav-brand-text">
           <span className="nav-brand-name">Email Agent</span>
@@ -47,7 +47,7 @@ function AppNav() {
       <div className="nav-footer">
         <div className="nav-footer-badge">
           <span className="nav-footer-dot" />
-          <span className="nav-footer-text">PII Shield Active</span>
+          <span className="nav-footer-text">Se1827 Submission</span>
         </div>
       </div>
     </nav>
