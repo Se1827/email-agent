@@ -16,7 +16,7 @@ function AppNav() {
     <nav className="app-nav" id="app-nav">
       <div className="nav-brand">
         <div className="nav-brand-icon">
-          <img src="/icon.png" alt="Email Agent Logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+          <img src="/icon.png" alt="Email Agent Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         <div className="nav-brand-text">
           <span className="nav-brand-name">Email Agent</span>

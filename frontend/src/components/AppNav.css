@@ -18,15 +18,13 @@
 }
 
 .nav-brand-icon {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: var(--radius-md);
-  background: var(--gradient-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  overflow: hidden;
 }
 
 .nav-brand-text {

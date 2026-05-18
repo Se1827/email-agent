@@ -9,6 +9,7 @@
   padding-bottom: var(--space-6);
   gap: var(--space-4);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .inbox-sidebar-header {
@@ -71,6 +72,15 @@
   gap: 6px;
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border);
+}
+
+.inbox-sidebar-actions .btn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 8px 10px;
+  font-size: 12px;
 }
 
 @keyframes spin {
