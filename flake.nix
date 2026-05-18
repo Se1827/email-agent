@@ -16,6 +16,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             python
+            pkgs.docker
             pkgs.python312Packages.pip
             pkgs.python312Packages.virtualenv
             pkgs.nodejs_22
