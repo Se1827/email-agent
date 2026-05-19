@@ -466,12 +466,13 @@ async def classify_email(
             subject_id=email.id,
         )
         return email.classification.model_dump(mode="json")
-    result = await classifier.classify(email, _relevant_events(email))
+    result, resolved_date = await classifier.classify(email, _calendar)
     email.classification = result
 
-    # ── Auto-create calendar event from meeting/critical emails ──────────
-    #auto_event = classifier.extract_meeting_event(email, result)
-    auto_event = classifier.extract_meeting_event(email, result, _calendar)
+    # ── Auto-create calendar event from meeting/action-required emails ───
+    auto_event = classifier.extract_meeting_event(
+        email, result, _calendar, resolved_date=resolved_date,
+    )
     if auto_event:
         # Check if we already have an auto-event for this email
         existing_auto = any(e.id == auto_event.id for e in _calendar)
@@ -545,7 +546,7 @@ async def draft_email_reply(
         )
         return email.draft_reply.model_dump(mode="json")
     result = await drafter.draft_reply(
-        email, email.classification, _relevant_events(email),
+        email, email.classification,
         quality=quality,
     )
     email.draft_reply = result
@@ -618,7 +619,7 @@ async def classify_all(
         if account_id and email.account_id != account_id:
             continue
         if email.classification is None:
-            result = await classifier.classify(email, _relevant_events(email))
+            result, _resolved = await classifier.classify(email, _calendar)
             email.classification = result
             safe_record_event(
                 "email.classified",

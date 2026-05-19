@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from src.llm import client as llm
 from src.llm.prompts import (
@@ -17,17 +16,48 @@ from src.models.email import (
     DraftReply,
     Email,
 )
-from src.services.classifier import (
-    filter_relevant_events,
-    _format_relevant_context,
-    _strip_quoted_text,
-    _extract_dates_from_text,
-    _extract_time_from_text,
-)
+from src.services.classifier import _strip_quoted_text
 from src.services.pii import PrivacyGateway, redact
 from src.storage import safe_store_pii_mappings
 
 log = logging.getLogger(__name__)
+
+
+def _extract_availability(reasoning: str) -> str:
+    """Extract the availability verdict from classifier reasoning.
+
+    The classifier always appends one of:
+      '... — You are NOT available at the proposed time: conflict with "X"'
+      '... — You ARE available at the proposed time.'
+
+    Returns a direct, unambiguous instruction for the drafter LLM.
+    """
+    if not reasoning:
+        return ""
+
+    if "NOT available" in reasoning:
+        # Extract the conflict event name if present
+        if 'conflict with "' in reasoning:
+            event_name = reasoning.split('conflict with "')[1].rstrip('"')
+            return (
+                f'\n\n*** MANDATORY: You are NOT available. '
+                f'You have a conflict with "{event_name}". '
+                f'DECLINE the proposed time and ask for an alternative. ***'
+            )
+        return (
+            '\n\n*** MANDATORY: You are NOT available. '
+            'DECLINE the proposed time. You have a prior commitment. '
+            'Ask the sender to suggest an alternative time. ***'
+        )
+
+    if "ARE available" in reasoning:
+        return (
+            '\n\n*** MANDATORY: You ARE available. '
+            'ACCEPT the proposed time. Confirm you are free '
+            'and look forward to the meeting/call. ***'
+        )
+
+    return ""
 
 
 async def draft_reply(
@@ -37,40 +67,41 @@ async def draft_reply(
     *,
     quality: str = "balanced",
 ) -> DraftReply:
-    """Generate a reply draft for the given email."""
+    """Generate a reply draft for the given email.
+
+    Availability is derived from the classifier's reasoning (which already
+    checked the calendar). The drafter does NOT independently resolve dates
+    or check the calendar — it trusts the classifier's verdict.
+    """
     privacy = PrivacyGateway()
-
-    relevant_events = filter_relevant_events(email, calendar_events or [])
-
-    # Extract the time the sender is proposing so the LLM gets an explicit
-    # CONFLICT / free label rather than having to guess from raw event data.
-    clean_body = _strip_quoted_text(email.body)
-    text = f"{email.subject} {clean_body}"
-    cand_dates = _extract_dates_from_text(text, email.timestamp)
-    cand_time  = _extract_time_from_text(text)
-
-    if cand_dates and cand_time:
-        cand_start = cand_dates[0].replace(hour=cand_time[0], minute=cand_time[1])
-        cand_end   = cand_start + timedelta(hours=1)
-    elif cand_dates:
-        cand_start, cand_end = cand_dates[0], None
-    else:
-        cand_start = cand_end = None
-
-    cal_ctx = _format_relevant_context(relevant_events, cand_start, cand_end)
 
     quality = quality if quality in DRAFT_USER_TEMPLATES else "balanced"
     template = DRAFT_USER_TEMPLATES[quality]
     temperature, max_tokens = DRAFT_QUALITY_PARAMS[quality]
 
+    # Split body: latest message vs quoted thread
+    latest_body = _strip_quoted_text(email.body)
+    full_body = email.body
+    thread_part = full_body[len(latest_body):].strip()
+    thread_context_block = ""
+    if thread_part:
+        thread_context_block = (
+            "--- Thread history (for context only, do NOT mimic) ---\n"
+            + thread_part
+        )
+
+    # Extract availability from classifier and inject as a hard instruction
+    availability = _extract_availability(classification.reasoning or "")
+
     user_msg = template.format(
         sender=privacy.mask_text(email.sender).text,
         subject=privacy.mask_text(email.subject).text,
         timestamp=email.timestamp.isoformat(),
-        body=privacy.mask_text(email.body).text,
+        latest_body=privacy.mask_text(latest_body).text,
+        thread_context=privacy.mask_text(thread_context_block).text,
         priority=classification.priority.value,
         category=classification.category.value,
-        calendar_context=privacy.mask_text(cal_ctx).text,
+        availability_instruction=availability,
     )
 
     raw = await llm.chat(
@@ -100,13 +131,7 @@ async def draft_reply(
         extra={
             "email_id": email.id,
             "quality": quality,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "relevant_events": len(relevant_events),
-            "pii_redacted": draft.pii_redacted,
-            "conflict_detected": cand_start is not None and any(
-                "[CONFLICT" in line for line in cal_ctx.splitlines()
-            ),
+            "availability": availability[:80] if availability else "none",
         },
     )
     return draft
