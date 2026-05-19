@@ -7,7 +7,11 @@
         "description": "Sprint 24 planning session — review backlog and assign stories.",
         "location": "Zoom",
         "color": "#8b5cf6",
-        "attendees": ["you@company.com", "raj.patel@company.com", "team@company.com"]
+        "attendees": [
+            "you@company.com",
+            "raj.patel@company.com",
+            "team@company.com"
+        ]
     },
     {
         "id": "cal-002",
@@ -17,7 +21,10 @@
         "description": "Weekly sync — discuss OKR progress and blockers.",
         "location": "Teams",
         "color": "#06b6d4",
-        "attendees": ["you@company.com", "manager@company.com"]
+        "attendees": [
+            "you@company.com",
+            "manager@company.com"
+        ]
     },
     {
         "id": "cal-003",
@@ -36,7 +43,10 @@
         "end": "2026-05-09T18:00:00+05:30",
         "description": "Submit quarterly OKR self-assessment to manager.",
         "color": "#f97316",
-        "attendees": ["you@company.com", "manager@company.com"]
+        "attendees": [
+            "you@company.com",
+            "manager@company.com"
+        ]
     },
     {
         "id": "cal-005",
@@ -47,7 +57,10 @@
         "location": "Slack Huddle",
         "color": "#22c55e",
         "recurrence": "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR",
-        "attendees": ["you@company.com", "team@company.com"]
+        "attendees": [
+            "you@company.com",
+            "team@company.com"
+        ]
     },
     {
         "id": "cal-006",
@@ -57,17 +70,25 @@
         "description": "Demo the new auth-service features to ExternalCorp stakeholders.",
         "location": "Google Meet",
         "color": "#f59e0b",
-        "attendees": ["you@company.com", "client.sarah@externalcorp.com", "raj.patel@company.com"]
+        "attendees": [
+            "you@company.com",
+            "client.sarah@externalcorp.com",
+            "raj.patel@company.com"
+        ]
     },
     {
         "id": "cal-007",
         "title": "Architecture Review",
-        "start": "2026-05-16T11:00:00+05:30",
-        "end": "2026-05-16T12:00:00+05:30",
+        "start": "2026-05-26T11:00:00+05:30",
+        "end": "2026-05-26T12:00:00+05:30",
         "description": "Review proposed microservice decomposition for the payments module.",
         "location": "Room 404",
         "color": "#8b5cf6",
-        "attendees": ["you@company.com", "deepak.verma@company.com", "manager@company.com"]
+        "attendees": [
+            "you@company.com",
+            "deepak.verma@company.com",
+            "manager@company.com"
+        ]
     },
     {
         "id": "cal-008",
@@ -77,7 +98,10 @@
         "description": "Sprint 24 retro — what went well, what to improve.",
         "location": "Zoom",
         "color": "#06b6d4",
-        "attendees": ["you@company.com", "team@company.com"]
+        "attendees": [
+            "you@company.com",
+            "team@company.com"
+        ]
     },
     {
         "id": "cal-009",
