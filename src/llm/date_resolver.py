@@ -45,13 +45,17 @@ is being proposed for a meeting, call, event, deadline, or action item.
 RULES:
 - "tomorrow" = reference date + 1 day
 - "next week" = the coming Monday after reference date
+- "by next week" / "before next week" = the coming Monday
+- "end of week" / "by Friday" = the coming Friday
 - "day after tomorrow" = reference date + 2 days
 - Day names ("Wednesday") = the next occurrence of that day after reference
 - Bare ordinals ("21st") = that day of the current month (next month if past)
 - Explicit dates like "May 19", "19th May", "2026-05-19" = that date
 - Times like "4pm", "16:00", "4:30 PM" = specific time on the resolved date
-- If NO meeting/call/event/deadline is being proposed (e.g. newsletters, \
-casual chat, informational updates), return has_proposed_date: false
+- Phrases like "ASAP", "urgent", "at your earliest" with no date = use \
+reference date + 1 day
+- If NO meeting/call/event/deadline/task is being proposed (e.g. newsletters, \
+FYI updates, thank-you notes), return has_proposed_date: false
 - Only look at the LATEST message, ignore quoted reply chains
 
 Return ONLY valid JSON (no markdown fences, no extra text):
@@ -77,7 +81,9 @@ async def resolve_proposed_datetime(
 
     Returns None if the email doesn't propose any meeting/event date.
     """
-    ref = email_timestamp.replace(tzinfo=None)
+    # Use local time as reference — email timestamps may be in UTC, which
+    # would shift relative dates like "tomorrow" by a day in other timezones.
+    ref = datetime.now().replace(second=0, microsecond=0)
 
     user_msg = _USER.format(
         ref_date=ref.strftime("%Y-%m-%d"),
