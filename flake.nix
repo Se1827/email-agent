@@ -36,6 +36,7 @@
             fi
 
             source .venv/bin/activate
+			export API_PORT=6900
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [
               pkgs.stdenv.cc.cc.lib
               pkgs.zlib
