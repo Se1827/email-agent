@@ -105,6 +105,13 @@ Category: {category}
 {availability_instruction}
 
 --- Instructions ---
+Use this tone: {tone}
+
+Tone rules:
+- professional = formal and polite
+- concise = short and direct
+- friendly = warm and conversational
+
 Draft a short, direct reply to the LATEST MESSAGE (2-3 sentences max).\
 """
 
@@ -123,6 +130,13 @@ Category: {category}
 {availability_instruction}
 
 --- Instructions ---
+Use this tone: {tone}
+
+Tone rules:
+- professional = formal and polite
+- concise = short and direct
+- friendly = warm and conversational
+
 Draft a helpful, professional reply to the LATEST MESSAGE. Stay concise.\
 """
 
@@ -141,6 +155,13 @@ Category: {category}
 {availability_instruction}
 
 --- Instructions ---
+Use this tone: {tone}
+
+Tone rules:
+- professional = formal and polite
+- concise = short and direct
+- friendly = warm and conversational
+
 Draft a comprehensive, detailed reply to the LATEST MESSAGE. Address every
 point raised. Be thorough but professional.\
 """
