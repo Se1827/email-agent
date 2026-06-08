@@ -18,7 +18,10 @@ from src.models.email import (
 )
 from src.services.classifier import _strip_quoted_text
 from src.services.pii import PrivacyGateway, redact
-from src.storage import safe_store_pii_mappings
+from src.storage import (
+    safe_store_pii_mappings,
+    get_sender_tone,
+)
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +79,7 @@ async def draft_reply(
     privacy = PrivacyGateway()
 
     quality = quality if quality in DRAFT_USER_TEMPLATES else "balanced"
+    sender_tone = get_sender_tone(email.sender)
     template = DRAFT_USER_TEMPLATES[quality]
     temperature, max_tokens = DRAFT_QUALITY_PARAMS[quality]
 
@@ -101,6 +105,7 @@ async def draft_reply(
         thread_context=privacy.mask_text(thread_context_block).text,
         priority=classification.priority.value,
         category=classification.category.value,
+        tone=sender_tone,
         availability_instruction=availability,
     )
 
