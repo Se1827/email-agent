@@ -101,6 +101,14 @@ async def draft_reply(
             + thread_part
         )
 
+    # Build calendar context string from passed-in events (used for availability context)
+    cal_ctx = ""
+    if calendar_events:
+        cal_ctx = "\n".join(
+            f"- {ev.title}: {ev.start.isoformat()} → {ev.end.isoformat()}"
+            for ev in calendar_events
+        )
+
     # Extract availability from classifier and inject as a hard instruction
     availability = _extract_availability(classification.reasoning or "")
 
