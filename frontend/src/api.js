@@ -26,12 +26,12 @@ export function fetchThread(id) {
     return request(`/emails/${id}/thread`);
 }
 
-export function classifyEmail(id) {
-    return request(`/emails/${id}/classify`, { method: 'POST' });
+export function classifyEmail(id, force = true) {
+    return request(`/emails/${id}/classify?force=${force}`, { method: 'POST' });
 }
 
-export function draftReply(id, quality = 'balanced') {
-    return request(`/emails/${id}/draft`, {
+export function draftReply(id, quality = 'balanced', force = true) {
+    return request(`/emails/${id}/draft?force=${force}`, {
         method: 'POST',
         body: JSON.stringify({ quality }),
     });

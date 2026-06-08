@@ -81,13 +81,17 @@ def _log_activity(action: str, detail: str, related_id: str | None = None) -> No
         _activity_log[:] = _activity_log[:50]
 
 
+_dismissed_notification_ids: set[str] = set()
+
+
 def _generate_notifications() -> None:
     """Build smart notifications from real email + calendar state.
 
     Every notification is derived from actual data in _emails and _calendar,
-    not hardcoded. This is called fresh on each dashboard request.
+    not hardcoded. Regenerated fresh on each call but dismissed IDs are
+    preserved so dismissed alerts stay gone.
     """
-    _notifications.clear()
+    generated: list[Notification] = []
     now = datetime.now(timezone.utc)
 
     # ── 1. Urgent unresponded emails (from real classified data) ─────────
@@ -99,7 +103,7 @@ def _generate_notifications() -> None:
     ]
     if urgent_emails:
         subjects = [e.subject[:50] for e in urgent_emails[:3]]
-        _notifications.append(Notification(
+        generated.append(Notification(
             id=f"notif-urgent-{len(urgent_emails)}",
             type="urgent_email",
             title=f"{len(urgent_emails)} urgent {'email' if len(urgent_emails) == 1 else 'emails'} need a reply",
@@ -131,7 +135,7 @@ def _generate_notifications() -> None:
         evt_type = "deadline" if ev.is_all_day else "meeting_soon"
         prefix = "Deadline" if ev.is_all_day else "Upcoming"
         location_hint = f" @ {ev.location}" if ev.location else ""
-        _notifications.append(Notification(
+        generated.append(Notification(
             id=f"notif-cal-{ev.id}",
             type=evt_type,
             title=f"{prefix}: {ev.title}",
@@ -145,7 +149,7 @@ def _generate_notifications() -> None:
     # ── 3. Unclassified emails (real count) ─────────────────────────────
     unclassified = [e for e in _emails.values() if not e.classification]
     if unclassified:
-        _notifications.append(Notification(
+        generated.append(Notification(
             id=f"notif-unclassified-{len(unclassified)}",
             type="ai_insight",
             title="Emails awaiting AI triage",
@@ -157,7 +161,7 @@ def _generate_notifications() -> None:
     # ── 4. Drafts awaiting approval (real count) ────────────────────────
     pending_drafts = [e for e in _emails.values() if e.draft_reply and not e.is_read]
     if pending_drafts:
-        _notifications.append(Notification(
+        generated.append(Notification(
             id=f"notif-drafts-{len(pending_drafts)}",
             type="ai_insight",
             title=f"{len(pending_drafts)} draft {'reply' if len(pending_drafts) == 1 else 'replies'} ready for review",
@@ -168,26 +172,50 @@ def _generate_notifications() -> None:
             timestamp=now,
         ))
 
-    # ── 5. High-priority emails with calendar conflicts ─────────────────
+    # ── 5. Meeting & action-required emails with calendar context ───────
     for e in _emails.values():
-        if not e.classification or e.classification.category.value != "meeting":
+        if not e.classification:
+            continue
+        cat = e.classification.category.value
+        if cat not in ("meeting", "action-required"):
             continue
         if e.draft_reply:
             continue
-        # Check if any calendar events overlap with this meeting email
-        from src.services.classifier import filter_relevant_events
-        related = filter_relevant_events(e, _calendar)
-        if related:
-            _notifications.append(Notification(
-                id=f"notif-conflict-{e.id[:8]}",
-                type="calendar_conflict",
-                title=f"Meeting email may conflict with: {related[0].title}",
-                message=f"From {e.sender.split('@')[0]} — '{e.subject[:40]}'",
+
+        notif_id = f"notif-action-{e.id[:8]}"
+
+        if cat == "action-required":
+            generated.append(Notification(
+                id=notif_id,
+                type="ai_insight",
+                title=f"Action required: {e.subject[:50]}",
+                message=f"From {e.sender.split('@')[0]} — needs your attention",
                 severity="warning",
                 related_id=e.id,
                 related_type="email",
                 timestamp=now,
             ))
+        else:
+            # Check if any calendar events overlap with this meeting email
+            from src.services.classifier import filter_relevant_events
+            related = filter_relevant_events(e, _calendar)
+            if related:
+                generated.append(Notification(
+                    id=f"notif-conflict-{e.id[:8]}",
+                    type="calendar_conflict",
+                    title=f"Meeting email may conflict with: {related[0].title}",
+                    message=f"From {e.sender.split('@')[0]} — '{e.subject[:40]}'",
+                    severity="warning",
+                    related_id=e.id,
+                    related_type="email",
+                    timestamp=now,
+                ))
+
+    # Replace notifications list, filtering out dismissed ones
+    _notifications.clear()
+    _notifications.extend(
+        n for n in generated if n.id not in _dismissed_notification_ids
+    )
 
 
 def _load_email_source() -> list[Email]:
@@ -466,12 +494,13 @@ async def classify_email(
             subject_id=email.id,
         )
         return email.classification.model_dump(mode="json")
-    result = await classifier.classify(email, _relevant_events(email))
+    result, resolved_date = await classifier.classify(email, _calendar)
     email.classification = result
 
-    # ── Auto-create calendar event from meeting/critical emails ──────────
-    #auto_event = classifier.extract_meeting_event(email, result)
-    auto_event = classifier.extract_meeting_event(email, result, _calendar)
+    # ── Auto-create calendar event from meeting/action-required emails ───
+    auto_event = classifier.extract_meeting_event(
+        email, result, _calendar, resolved_date=resolved_date,
+    )
     if auto_event:
         # Check if we already have an auto-event for this email
         existing_auto = any(e.id == auto_event.id for e in _calendar)
@@ -545,7 +574,7 @@ async def draft_email_reply(
         )
         return email.draft_reply.model_dump(mode="json")
     result = await drafter.draft_reply(
-        email, email.classification, _relevant_events(email),
+        email, email.classification,
         quality=quality,
     )
     email.draft_reply = result
@@ -618,7 +647,7 @@ async def classify_all(
         if account_id and email.account_id != account_id:
             continue
         if email.classification is None:
-            result = await classifier.classify(email, _relevant_events(email))
+            result, _resolved = await classifier.classify(email, _calendar)
             email.classification = result
             safe_record_event(
                 "email.classified",
@@ -711,11 +740,12 @@ async def get_notifications() -> list[dict[str, Any]]:
 @router.post("/notifications/{notif_id}/dismiss")
 async def dismiss_notification(notif_id: str) -> dict[str, str]:
     """Dismiss a notification."""
+    _dismissed_notification_ids.add(notif_id)
     for i, n in enumerate(_notifications):
         if n.id == notif_id:
             _notifications.pop(i)
             return {"status": "dismissed"}
-    raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "dismissed"}
 
 
 # ---- Account Endpoints -----------------------------------------------------

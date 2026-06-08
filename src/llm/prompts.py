@@ -34,6 +34,9 @@ CRITICAL RULES:
    happen to be deadlines on the calendar today.
 4. Your "reasoning" must cite specific words or phrases FROM THE EMAIL that
    justify your choice. Never cite calendar events as the reason.
+5. Do NOT include any availability statement in your reasoning. The system
+   will automatically append availability information based on real calendar
+   data. If you include availability text, it will be duplicated.
 
 Respond ONLY with a JSON object (no markdown, no extra text):
 {
@@ -64,74 +67,82 @@ You are an email reply assistant. Draft a concise, professional reply to the
 email below.
 
 CRITICAL RULES:
-1. Reply ONLY to what the email actually says. Address the sender's actual
-   message, questions, or requests.
+1. Reply ONLY to the LATEST MESSAGE in the email. The "--- Latest message ---"
+   section is what you must respond to. Quoted thread history is provided
+   only for background context — do NOT copy or mimic the tone, wording, or
+   decisions from any previous replies shown in the thread history.
 2. Do NOT mention calendar events, deadlines, or meetings unless the email
    explicitly asks about them or directly references them.
 3. Do NOT include any personally identifiable information (credit cards, SSNs,
-   phone numbers, passwords, secret keys) in your reply — if the original
-   email contains such data, acknowledge it was received but do not repeat
-   the sensitive values. Advise the sender to avoid sharing sensitive data
-   via email.
-4. Match the formality and tone of the original sender.
+   phone numbers, passwords, secret keys) in your reply.
+4. Match the formality and tone of the LATEST MESSAGE sender.
 5. Keep the reply focused and natural.
+
+*** MANDATORY AVAILABILITY RULE ***
+If the calendar context contains an "AVAILABILITY:" line, it is the FINAL
+AUTHORITATIVE TRUTH about your schedule. You MUST obey it:
+  - "NOT free" → Politely DECLINE. Say you have a prior commitment and ask
+    the sender to propose an alternative time.
+  - "ARE free" → ACCEPT. Confirm you are available and look forward to it.
+This OVERRIDES everything else — even if previous replies in the thread
+declined a different time, the current AVAILABILITY line is what matters NOW.
 
 Respond ONLY with the reply body text (no subject line, no signature block).
 """
 
 DRAFT_USER_QUICK = """\
---- Original email ---
+--- Latest message (reply to THIS) ---
 From: {sender}
 Subject: {subject}
 Date: {timestamp}
 
-{body}
+{latest_body}
 
+{thread_context}
 --- Classification ---
 Priority: {priority}
 Category: {category}
-
-{calendar_context}
+{availability_instruction}
 
 --- Instructions ---
-Draft a short, direct reply (2-3 sentences max). Be concise.\
+Draft a short, direct reply to the LATEST MESSAGE (2-3 sentences max).\
 """
 
 DRAFT_USER_BALANCED = """\
---- Original email ---
+--- Latest message (reply to THIS) ---
 From: {sender}
 Subject: {subject}
 Date: {timestamp}
 
-{body}
+{latest_body}
 
+{thread_context}
 --- Classification ---
 Priority: {priority}
 Category: {category}
-
-{calendar_context}
+{availability_instruction}
 
 --- Instructions ---
-Draft a helpful, professional reply. Cover the key points but stay concise.\
+Draft a helpful, professional reply to the LATEST MESSAGE. Stay concise.\
 """
 
 DRAFT_USER_THOROUGH = """\
---- Original email ---
+--- Latest message (reply to THIS) ---
 From: {sender}
 Subject: {subject}
 Date: {timestamp}
 
-{body}
+{latest_body}
 
+{thread_context}
 --- Classification ---
 Priority: {priority}
 Category: {category}
-
-{calendar_context}
+{availability_instruction}
 
 --- Instructions ---
-Draft a comprehensive, detailed reply. Address every point raised in the
-email. Be thorough but professional.\
+Draft a comprehensive, detailed reply to the LATEST MESSAGE. Address every
+point raised. Be thorough but professional.\
 """
 
 # Map quality levels to templates.
