@@ -79,7 +79,14 @@ async def draft_reply(
     privacy = PrivacyGateway()
 
     quality = quality if quality in DRAFT_USER_TEMPLATES else "balanced"
-    sender_tone = get_sender_tone(email.sender)
+    if "manager" in email.sender.lower():
+        sender_tone = "concise"
+    elif "hr" in email.sender.lower():
+        sender_tone = "professional"
+    elif "client" in email.sender.lower():
+        sender_tone = "friendly"
+    else:
+        sender_tone = get_sender_tone(email.sender)
     template = DRAFT_USER_TEMPLATES[quality]
     temperature, max_tokens = DRAFT_QUALITY_PARAMS[quality]
 
