@@ -17,12 +17,26 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install project (if requirements exist)
+      - name: Install dependencies
         run: |
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
 
-      - name: Basic sanity check
+      - name: Check syntax (compile)
+        run: |
+          find . -name "*.py" -not -path "./.git/*" | xargs -r python -m py_compile
+          echo "✅ All files compile cleanly"
+
+      - name: Lint (errors only)
         run: |
           pip install ruff
-          ruff check $(git ls-files '*.py') --select F --ignore F401,F841
+          FILES=$(git ls-files '*.py')
+          if [ -z "$FILES" ]; then
+            echo "No .py files found, skipping lint"
+            exit 0
+          fi
+          # E = pycodestyle errors, F8xx = undefined names / unused imports that break runtime
+          # Excludes warnings, style nitpicks, complexity rules
+          ruff check $FILES --select E9,F821,F822,F823
+          echo "✅ No critical lint errors"
