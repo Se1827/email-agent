@@ -332,6 +332,30 @@ def store_user_preferences(user: str, payload: dict[str, Any]) -> StoredRecord |
         metadata={"user_hash": _stable_hash(user)},
     )
 
+def save_sender_tone(sender_email: str, tone: str) -> None:
+    """Save preferred tone for a sender."""
+    preferences = load_record_payload(
+        "user_preferences",
+        "sender_preferences",
+    ) or {}
+
+    preferences[sender_email] = tone
+
+    store_user_preferences(
+        "sender_preferences",
+        preferences,
+    )
+
+
+def get_sender_tone(sender_email: str) -> str:
+    """Get preferred tone for a sender."""
+    preferences = load_record_payload(
+        "user_preferences",
+        "sender_preferences",
+    ) or {}
+
+    return preferences.get(sender_email, "professional")
+
 
 def store_semantic_memory(
     *,
