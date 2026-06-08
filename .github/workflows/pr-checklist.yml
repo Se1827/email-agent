@@ -1,0 +1,24 @@
+name: PR Checklist Validation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate checklist
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          echo "$PR_BODY"
+
+          grep -Fq -- "- [x] I have tested my changes." <<< "$PR_BODY" \
+            || { echo "❌ 'I have tested my changes.' is not checked"; exit 1; }
+
+          grep -Fq -- "- [x] The submitted code follows the project's coding standards." <<< "$PR_BODY" \
+            || { echo "❌ 'The submitted code follows the project's coding standards.' is not checked"; exit 1; }
+
+          echo "✅ Checklist complete"
