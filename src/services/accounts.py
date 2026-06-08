@@ -32,10 +32,31 @@ def account_inbox(account: AccountConfig) -> str:
 def load_accounts(data_dir: Path) -> list[AccountConfig]:
     """Load account configs from the accounts.json file.
 
-    Falls back to a single default account built from IMAP env vars when
-    the file does not exist.
+    Initialises accounts.json with dummy data when the file does not exist.
     """
     accounts_file = data_dir / "accounts.json"
+    
+    if not accounts_file.exists():
+        dummy_account = AccountConfig(
+            id="testing",
+            name="Se1827",
+            email="se1827@mock.com",
+            provider="mock",
+            imap_host="",
+            imap_port=993,
+            imap_user="se1827@mock.com",
+            imap_pass="",
+            imap_mailbox="INBOX",
+            imap_use_ssl=True,
+            color="#3b82f6",
+            is_active=True
+        )
+        try:
+            save_accounts(data_dir, [dummy_account])
+            log.info("accounts_file_initialized_with_dummy_data")
+        except Exception:
+            log.exception("accounts_initialization_failed")
+
     if accounts_file.exists():
         try:
             with open(accounts_file, encoding="utf-8") as f:
