@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
+from src.api.graph_routes import router as graph_router
 from src.logging import setup_logging
 from src.config import get_settings
 from src.observability import setup_telemetry
@@ -39,4 +40,5 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(router, prefix="/api")
+    app.include_router(graph_router, prefix="/api/graph")
     return app
