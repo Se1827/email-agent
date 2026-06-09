@@ -1,0 +1,60 @@
+name: PR Checklist Validation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate PR checklist
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          TMPFILE=$(mktemp)
+          printf '%s' "$PR_BODY" > "$TMPFILE"
+
+          FAILED=0
+
+          check_checked() {
+            local item="$1"
+            # Match both * and - as list markers, and both [x] and [X]
+            if grep -qP -- "^[*-] \[[xX]\] ${item}" "$TMPFILE"; then
+              echo "✅ Checked: ${item}"
+            else
+              echo "❌ NOT checked: ${item}"
+              FAILED=1
+            fi
+          }
+
+          check_not_skipped() {
+            local item="$1"
+            # Fail if item exists but is explicitly unchecked
+            if grep -qP -- "^[*-] \[ \] ${item}" "$TMPFILE"; then
+              echo "❌ Required item left unchecked: ${item}"
+              FAILED=1
+            fi
+          }
+
+          # Must be explicitly checked
+          check_checked "I have tested my changes."
+          check_checked "The submitted code follows the project's coding standards."
+
+          # Must not be left as [ ]
+          check_not_skipped "I have documented any new functionality where applicable."
+          check_not_skipped "I have disclosed any AI assistance used in this contribution."
+
+          rm -f "$TMPFILE"
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "💥 PR checklist validation failed. Tick all required boxes before merging."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All checklist items validated."

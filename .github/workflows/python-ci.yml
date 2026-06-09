@@ -1,0 +1,42 @@
+name: Python Basic Check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Check syntax (compile)
+        run: |
+          find . -name "*.py" -not -path "./.git/*" | xargs -r python -m py_compile
+          echo "✅ All files compile cleanly"
+
+      - name: Lint (errors only)
+        run: |
+          pip install ruff
+          FILES=$(git ls-files '*.py')
+          if [ -z "$FILES" ]; then
+            echo "No .py files found, skipping lint"
+            exit 0
+          fi
+          # E = pycodestyle errors, F8xx = undefined names / unused imports that break runtime
+          # Excludes warnings, style nitpicks, complexity rules
+          ruff check $FILES --select E9,F821,F822,F823
+          echo "✅ No critical lint errors"
