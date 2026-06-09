@@ -38,6 +38,17 @@ class DraftQuality(str, Enum):
 # Core models
 # ---------------------------------------------------------------------------
 
+class Attachment(BaseModel):
+    filename: str
+    content_type: str
+    size_bytes: int
+    content: str  # Base64 encoded raw content
+    text_content: Optional[str] = None  # Extracted text content if readable
+    is_safe: bool = True  # Security scan result
+    scan_results: str = ""  # Scan logs / detail
+    pii_detected: list[str] = Field(default_factory=list)
+
+
 class Email(BaseModel):
     id: str
     inbox: Optional[str] = None
@@ -48,6 +59,7 @@ class Email(BaseModel):
     body: str
     timestamp: datetime
     thread_id: Optional[str] = None
+    attachments: list[Attachment] = Field(default_factory=list)
 
     # UI state.
     is_read: bool = False

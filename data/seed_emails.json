@@ -65,6 +65,19 @@
         "body": "Hi,\n\nPlease find the payment details for invoice #4821:\n\nAmount: $12,500.00\nBank: First National Bank\nAccount: 9283-7461-0023\nRouting: 021000021\n\nLet me know once the transfer is initiated. We need this processed before end of week.\n\nRegards,\nSarah",
         "timestamp": "2026-05-18T20:00:00+05:30",
         "thread_id": "t004"
+        "thread_id": "t004",
+        "attachments": [
+            {
+                "filename": "payment_instructions.txt",
+                "content_type": "text/plain",
+                "size_bytes": 165,
+                "content": "UGF5bWVudCBpbnN0cnVjdGlvbnMgZm9yIEludm9pY2UgIzQ4MjE6CkFtb3VudDogJDEyLDUwMC4wMApCYW5rOiBGaXJzdCBOYXRpb25hbCBCYW5rCkFjY291bnQ6IDkyODMtNzQ2MS0wMDIzClJvdXRpbmc6IDAyMTAwMDAyMQpTU046IDAwMC0xMi0zNDU2",
+                "text_content": "Payment instructions for Invoice #4821:\nAmount: $12,500.00\nBank: First National Bank\nAccount: 9283-7461-0023\nRouting: 021000021\nSSN: 000-12-3456",
+                "is_safe": true,
+                "scan_results": "Clean scan: No threats detected.",
+                "pii_detected": ["bank_account", "routing_number", "ssn"]
+            }
+        ]
     },
     {
         "id": "e007",
@@ -76,6 +89,19 @@
         "body": "CLICK HERE TO CLAIM YOUR PRIZE!\n\nYou have been selected as today's lucky winner. Claim your $500 Amazon gift card by clicking the link below:\n\nhttp://totallylegit.biz/claim?id=xyz\n\nOffer expires in 24 hours!",
         "timestamp": "2026-05-07T07:45:00+05:30",
         "thread_id": null
+        "thread_id": null,
+        "attachments": [
+            {
+                "filename": "claim_prize.exe",
+                "content_type": "application/x-msdownload",
+                "size_bytes": 1048576,
+                "content": "TVpQQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB",
+                "text_content": null,
+                "is_safe": false,
+                "scan_results": "Threat blocked: Executable or scripting file extension '.exe' detected.",
+                "pii_detected": []
+            }
+        ]
     },
     {
         "id": "e008",
@@ -87,5 +113,18 @@
         "body": "Hey,\n\nCould you review my PR for the auth-service refactor? It is a fairly contained change — just swapping the JWT library and updating the middleware.\n\nPR link: https://github.com/company/auth-service/pull/312\n\nNo rush, but would be great to get it merged before the Wednesday sprint.\n\nCheers,\nDeepak",
         "timestamp": "2026-05-07T11:30:00+05:30",
         "thread_id": "t005"
+        "thread_id": "t005",
+        "attachments": [
+            {
+                "filename": "review_notes.md",
+                "content_type": "text/markdown",
+                "size_bytes": 107,
+                "content": "IyBBdXRoIFNlcnZpY2UgUmVmYWN0b3IgTm90ZXMKCi0gU3dhcHBlZCBqd3QgbGlicmFyeSB0byBweWp3dAotIFVwZGF0ZWQgbWlkZGxld2FyZSBmb3IgYmVhcmVyIHRva2VuIHZhbGlkYXRpb24K",
+                "text_content": "# Auth Service Refactor Notes\n\n- Swapped jwt library to pyjwt\n- Updated middleware for bearer token validation\n",
+                "is_safe": true,
+                "scan_results": "Clean scan: No threats detected.",
+                "pii_detected": []
+            }
+        ]
     }
 ]

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.api import routes
 from src.models.email import Classification, Email
+from src.models.email import AccountConfig, Classification, Email
 
 
 def _email(
@@ -50,6 +51,16 @@ def _patch_loader_deps(monkeypatch, *, db_payloads, source_emails):
     monkeypatch.setattr(routes, "get_settings", lambda: settings)
     monkeypatch.setattr(routes, "load_email_states", lambda inbox=None: db_payloads)
     monkeypatch.setattr(routes, "_load_email_source", lambda: source_emails)
+    monkeypatch.setattr(routes, "load_accounts", lambda path: [
+        AccountConfig(
+            id="mock-default",
+            name="Demo Inbox",
+            email="you@company.com",
+            provider="mock",
+            is_active=True,
+        )
+    ])
+    monkeypatch.setattr(routes, "_load_account_email_source", lambda account, inbox: source_emails)
     monkeypatch.setattr(routes, "_store_email_memory", lambda email: None)
     monkeypatch.setattr(routes, "safe_store_email", lambda email, source: None)
     monkeypatch.setattr(routes, "safe_store_calendar_event", lambda event, source="mock": None)
@@ -65,6 +76,8 @@ def test_db_then_source_keeps_db_only_email_visible(monkeypatch):
 
     assert routes._emails["cached"].classification is not None
     assert routes._emails["cached"].storage_origin == "db"
+    assert routes._emails["mock-default:cached"].classification is not None
+    assert routes._emails["mock-default:cached"].storage_origin == "db"
 
 
 def test_db_then_source_keeps_cached_state_for_unchanged_source_email(monkeypatch):
@@ -76,6 +89,8 @@ def test_db_then_source_keeps_cached_state_for_unchanged_source_email(monkeypatc
 
     assert routes._emails["same"].classification == cached.classification
     assert routes._emails["same"].storage_origin == "source+cache"
+    assert routes._emails["mock-default:same"].classification == cached.classification
+    assert routes._emails["mock-default:same"].storage_origin == "source+cache"
 
 
 def test_db_then_source_clears_cached_state_for_changed_source_email(monkeypatch):
@@ -88,3 +103,6 @@ def test_db_then_source_clears_cached_state_for_changed_source_email(monkeypatch
     assert routes._emails["same"].body == "new"
     assert routes._emails["same"].classification is None
     assert routes._emails["same"].storage_origin == "source-updated"
+    assert routes._emails["mock-default:same"].body == "new"
+    assert routes._emails["mock-default:same"].classification is None
+    assert routes._emails["mock-default:same"].storage_origin == "source-updated"
