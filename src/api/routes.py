@@ -1049,6 +1049,12 @@ class AccountCreate(BaseModel):
     imap_pass: str = ""
     imap_mailbox: str = "INBOX"
     imap_use_ssl: bool = True
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_use_ssl: bool = False
+    smtp_use_tls: bool = True
     color: str = "#3b82f6"
     is_active: bool = True
 
@@ -1063,6 +1069,12 @@ class AccountUpdate(BaseModel):
     imap_pass: str | None = None
     imap_mailbox: str | None = None
     imap_use_ssl: bool | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_user: str | None = None
+    smtp_pass: str | None = None
+    smtp_use_ssl: bool | None = None
+    smtp_use_tls: bool | None = None
     color: str | None = None
     is_active: bool | None = None
 
@@ -1092,6 +1104,8 @@ async def update_account(account_id: str, body: AccountUpdate) -> dict[str, Any]
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if updates.get("imap_pass") == "":
         updates.pop("imap_pass")
+    if updates.get("smtp_pass") == "":
+        updates.pop("smtp_pass")
     updated = account.model_copy(update=updates)
     accounts = [updated if a.id == account_id else a for a in accounts]
     save_accounts(cfg.data_dir, accounts)

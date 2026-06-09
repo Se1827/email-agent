@@ -70,6 +70,7 @@ function SettingsPage() {
       ...EMPTY_ACCOUNT,
       ...account,
       imap_pass: '',
+      smtp_pass: '',
     });
     setAccountError(null);
   };
@@ -93,6 +94,8 @@ function SettingsPage() {
         ...form,
         imap_port: Number(form.imap_port) || 993,
         imap_user: form.imap_user || form.email,
+        smtp_port: Number(form.smtp_port) || 587,
+        smtp_user: form.smtp_user || form.email,
       };
       if (editingId === 'new') {
         await createAccount(payload);
