@@ -13,7 +13,7 @@ from src.models.email import CalendarEvent
 
 def load_events(data_file: Path) -> list[CalendarEvent]:
     """Read calendar events from a JSON file."""
-    with open(data_file) as f:
+    with open(data_file, encoding="utf-8") as f:
         raw = json.load(f)
     events = []
     for entry in raw:
