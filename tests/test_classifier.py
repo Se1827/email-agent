@@ -69,6 +69,7 @@ class TestClassify:
         monkeypatch.setattr("src.services.classifier.llm.chat", mock_chat)
 
         result = await classify(sample_email)
+        result, _ = await classify(sample_email)
         assert result.priority == Priority.HIGH
         assert result.category == Category.DEADLINE
 
