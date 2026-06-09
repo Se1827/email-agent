@@ -6,6 +6,7 @@ self-hosted, etc.) — the same settings you would put into Thunderbird.
 
 from __future__ import annotations
 
+import base64
 import email
 import email.header
 import email.utils
@@ -16,6 +17,8 @@ from datetime import datetime, timezone
 from email.message import Message
 
 from src.models.email import Email
+from src.models.email import Attachment, Email
+from src.services import attachment as att_service
 
 log = logging.getLogger(__name__)
 
@@ -148,6 +151,36 @@ def fetch_emails(
             msg_id = msg.get("Message-ID")
             thread_id = msg.get("In-Reply-To") or msg.get("References", "").split()[0] if msg.get("References") else None
 
+            attachments = []
+            if msg.is_multipart():
+                for part in msg.walk():
+                    disposition = str(part.get("Content-Disposition", ""))
+                    filename_raw = part.get_filename()
+                    if "attachment" in disposition or filename_raw:
+                        filename = _decode_header(filename_raw or "unnamed_attachment")
+                        content_type = part.get_content_type()
+                        payload = part.get_payload(decode=True)
+                        if payload is not None:
+                            b64_content = base64.b64encode(payload).decode("utf-8")
+                            is_safe, scan_results = att_service.scan_security(filename, payload)
+                            text_content = None
+                            pii_detected = []
+                            if is_safe:
+                                text_content = att_service.extract_text(payload, content_type, filename)
+                                if text_content:
+                                    pii_detected = att_service.detect_pii(text_content)
+                            
+                            attachments.append(Attachment(
+                                filename=filename,
+                                content_type=content_type,
+                                size_bytes=len(payload),
+                                content=b64_content,
+                                text_content=text_content,
+                                is_safe=is_safe,
+                                scan_results=scan_results,
+                                pii_detected=pii_detected,
+                            ))
+
             emails.append(Email(
                 id=_stable_id(msg_id, subject, str(date)),
                 inbox=inbox,
@@ -157,6 +190,7 @@ def fetch_emails(
                 body=body[:5000],  # cap very long emails
                 timestamp=date,
                 thread_id=thread_id,
+                attachments=attachments,
             ))
 
         log.info("imap_fetched", extra={"count": len(emails)})
