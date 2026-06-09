@@ -57,7 +57,6 @@ def load_accounts(data_dir: Path) -> list[AccountConfig]:
         except Exception:
             log.exception("accounts_initialization_failed")
 
->>>>>>> 383ebdcfc61873e102577f04bb09d0cda234d674
     if accounts_file.exists():
         try:
             with open(accounts_file, encoding="utf-8") as f:
