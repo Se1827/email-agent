@@ -136,6 +136,13 @@ export function deleteCalendarEvent(id) {
 }
 
 // ---- AI ----
+export function aiComposeEmail(prompt, quality = 'balanced') {
+    return request('/emails/ai-compose', {
+        method: 'POST',
+        body: JSON.stringify({ prompt, quality }),
+    });
+}
+
 export function askAI(question, contextType, contextId) {
     return request('/ai/ask', {
         method: 'POST',

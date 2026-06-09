@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X, Send, RotateCcw, Sparkles, ChevronDown,
   Zap, Gauge, Clock, ChevronUp
 } from 'lucide-react';
-import { composeEmail, fetchAccounts, draftReply } from '../api';
+import { composeEmail, fetchAccounts, aiComposeEmail } from '../api';
 import './ComposeModal.css';
 
 const QUALITY_OPTIONS = [
@@ -22,6 +22,13 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [showCc, setShowCc] = useState(false);
+
+  const [showAI, setShowAI] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiQuality, setAiQuality] = useState('balanced');
+  const [showAiQuality, setShowAiQuality] = useState(false);
+  const [generatingAI, setGeneratingAI] = useState(false);
+
   const modalRef = useRef(null);
 
   useEffect(() => {
@@ -84,7 +91,23 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
     }
   };
 
-  const hasContent = to.trim() || subject.trim() || body.trim();
+  const handleAIGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setGeneratingAI(true);
+    setError(null);
+    try {
+      const response = await aiComposeEmail(aiPrompt, aiQuality);
+      setBody(response.draft || response.body || '');
+      setShowAI(false);
+      setAiPrompt('');
+    } catch (err) {
+      setError(err.message || 'Failed to generate draft.');
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
+
+  const hasContent = (to || '').trim() || (subject || '').trim() || (body || '').trim();
 
   const handleClose = () => {
     if (hasContent) {
@@ -166,11 +189,86 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
           </div>
 
           <div className="compose-body-wrapper">
+            <div className="compose-toolbar">
+              <button 
+                type="button" 
+                className={`btn-action compose-ai-toggle ${showAI ? 'active' : ''}`}
+                onClick={() => setShowAI(!showAI)}
+              >
+                <Sparkles size={14} /> AI Assist
+              </button>
+            </div>
+
+            {showAI && (
+              <div className="compose-ai-panel animate-slide-down">
+                <input
+                  className="input compose-ai-input"
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="What should this email be about?"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAIGenerate();
+                    }
+                  }}
+                />
+                <div className="compose-ai-actions">
+                  <div className="quality-selector-wrapper">
+                    <button
+                      type="button"
+                      className="btn btn-action"
+                      onClick={() => setShowAiQuality(!showAiQuality)}
+                      disabled={generatingAI}
+                    >
+                      {(() => {
+                        const SelectedIcon = QUALITY_OPTIONS.find(q => q.value === aiQuality)?.icon || Zap;
+                        return <SelectedIcon size={14} />;
+                      })()}
+                      {QUALITY_OPTIONS.find(q => q.value === aiQuality)?.label}
+                      {showAiQuality ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                    {showAiQuality && (
+                      <div className="quality-dropdown">
+                        {QUALITY_OPTIONS.map(({ value, label, icon: Icon, desc }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`quality-option ${aiQuality === value ? 'active' : ''}`}
+                            onClick={() => { setAiQuality(value); setShowAiQuality(false); }}
+                          >
+                            <Icon size={14} />
+                            <div>
+                              <div className="quality-option-label">{label}</div>
+                              <div className="quality-option-desc">{desc}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleAIGenerate}
+                    disabled={generatingAI || !aiPrompt.trim()}
+                  >
+                    {generatingAI ? (
+                      <><RotateCcw size={14} className="spin" /> Generating...</>
+                    ) : (
+                      <><Sparkles size={14} /> Generate</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <textarea
               className="compose-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your message..."
+              placeholder={showAI ? '' : 'Write your message...'}
               rows={12}
             />
           </div>

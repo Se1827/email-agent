@@ -169,3 +169,39 @@ given email context. Be specific, cite the email content, and keep your
 answer concise.
 """
 
+# ---------------------------------------------------------------------------
+# Email Composing (From scratch)
+# ---------------------------------------------------------------------------
+
+COMPOSE_SYSTEM = """\
+You are an expert email composing assistant. Your job is to draft a brand new,
+standalone email based on the user's prompt. 
+
+CRITICAL RULES:
+1. Do NOT include any placeholder text (like [Your Name] or [Date]).
+2. Be professional and natural in tone.
+3. Respond ONLY with the email body text. Do not include a subject line.
+"""
+
+COMPOSE_USER_QUICK = """\
+Draft a very short, direct email based on this request (2-3 sentences max).
+Request: {prompt}
+"""
+
+COMPOSE_USER_BALANCED = """\
+Draft a professional, well-structured email based on this request.
+Request: {prompt}
+"""
+
+COMPOSE_USER_THOROUGH = """\
+Draft a comprehensive and detailed email based on this request. Address all
+points gracefully and professionally.
+Request: {prompt}
+"""
+
+COMPOSE_USER_TEMPLATES = {
+    "quick": COMPOSE_USER_QUICK,
+    "balanced": COMPOSE_USER_BALANCED,
+    "thorough": COMPOSE_USER_THOROUGH,
+}
+

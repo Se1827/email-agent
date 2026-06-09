@@ -144,32 +144,27 @@ function SettingsPage() {
             Add mock or IMAP accounts here. Active accounts are loaded into the inbox and stored with separate encrypted inbox scopes.
           </p>
           {accountError && <div className="settings-error">{accountError}</div>}
-          <div className="settings-accounts-list">
+          <div className="settings-account-list">
             {accounts.map((acc) => (
-              <div key={acc.id} className="settings-account-row">
-                <div className="settings-account-avatar" style={{ background: acc.color }}>
+              <div key={acc.id} className={`settings-account-card ${!acc.is_active ? 'inactive' : ''}`}>
+                <div className="account-card-avatar" style={{ background: acc.color }}>
                   {acc.name.charAt(0)}
                 </div>
-                <div className="settings-account-info">
-                  <div className="settings-account-name">{acc.name}</div>
-                  <div className="settings-account-email">{acc.email}</div>
-                  {acc.provider !== 'mock' && (
-                    <div className="settings-account-meta">
-                      {acc.imap_host || 'No host'} · {acc.imap_mailbox || 'INBOX'}
-                    </div>
-                  )}
+                <div className="account-card-info">
+                  <div className="account-card-name">
+                    {acc.name}
+                    {!acc.is_active && <span className="settings-tag">Disabled</span>}
+                  </div>
+                  <div className="account-card-email">{acc.email}</div>
                 </div>
-                <div className="settings-account-tags">
-                  <span className="settings-tag">{acc.provider}</span>
-                  {acc.is_active ? (
-                    <span className="settings-tag settings-tag-active"><Wifi size={10} /> Active</span>
-                  ) : (
-                    <span className="settings-tag settings-tag-inactive"><WifiOff size={10} /> Inactive</span>
-                  )}
+                <div className="account-card-actions">
+                  <button className="btn-icon" onClick={() => startEdit(acc)} title="Edit Account">
+                    <Pencil size={14} />
+                  </button>
+                  <button className="btn-icon danger" onClick={() => handleDelete(acc)} title="Delete Account">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <button className="btn-icon" onClick={() => startEdit(acc)} title="Edit account">
-                  <Pencil size={14} />
-                </button>
               </div>
             ))}
             {!loading && accounts.length === 0 && (

@@ -703,6 +703,22 @@ class ComposeRequest(BaseModel):
     account_id: str
 
 
+class AIComposeRequest(BaseModel):
+    prompt: str
+    quality: str = "balanced"
+
+
+@router.post("/emails/ai-compose")
+async def handle_ai_compose(body: AIComposeRequest) -> dict[str, Any]:
+    """Generate a completely new draft using AI."""
+    from src.services.drafter import ai_compose
+    try:
+        draft_text = await ai_compose(body.prompt, body.quality)
+        return {"draft": draft_text}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 def _do_send_reply(
     original: Email,
     body: str,

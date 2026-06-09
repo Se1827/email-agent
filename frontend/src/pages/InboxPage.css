@@ -1,5 +1,6 @@
 .inbox-page {
   display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
   position: relative;
@@ -12,9 +13,7 @@
 }
 
 .account-switcher {
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
+  position: relative;
   z-index: 20;
 }
 
