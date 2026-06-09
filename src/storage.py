@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS encrypted_records (
     email_id TEXT,
     thread_id TEXT,
     source TEXT,
+    message_id TEXT,
+    in_reply_to TEXT,
+    is_sent BOOLEAN NOT NULL DEFAULT FALSE,
     occurred_at TIMESTAMPTZ NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     ciphertext BYTEA NOT NULL,
@@ -49,12 +52,18 @@ CREATE TABLE IF NOT EXISTS encrypted_records (
     UNIQUE (record_type, record_id)
 );
 
+ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS message_id TEXT;
+ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS in_reply_to TEXT;
+ALTER TABLE encrypted_records ADD COLUMN IF NOT EXISTS is_sent BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS idx_encrypted_records_type_time
     ON encrypted_records (record_type, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_encrypted_records_email
     ON encrypted_records (email_id);
 CREATE INDEX IF NOT EXISTS idx_encrypted_records_thread
     ON encrypted_records (thread_id);
+CREATE INDEX IF NOT EXISTS idx_encrypted_records_message_id
+    ON encrypted_records (message_id);
 CREATE INDEX IF NOT EXISTS idx_encrypted_records_metadata
     ON encrypted_records USING GIN (metadata);
 """
@@ -201,6 +210,9 @@ def store_email(email: Any, *, source: str) -> StoredRecord | None:
         "recipient_count": len(payload.get("recipients", []) or []),
         "has_classification": bool(payload.get("classification")),
         "has_draft": bool(payload.get("draft_reply")),
+        "is_sent": bool(payload.get("is_sent")),
+        "message_id": payload.get("message_id"),
+        "in_reply_to": payload.get("in_reply_to"),
     }
     return upsert_record(
         "email",

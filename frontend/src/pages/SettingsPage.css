@@ -383,3 +383,44 @@ input[type="color"].input {
     padding: var(--space-5);
   }
 }
+
+/* ---- SMTP Form Section ---- */
+.account-form-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+}
+
+.account-form-divider::before,
+.account-form-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.account-form-divider-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.input-with-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.input-with-action .input {
+  flex: 1;
+}
+
+.input-with-action .btn-link {
+  white-space: nowrap;
+  font-size: 11px;
+}

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, PenSquare } from 'lucide-react';
 import InboxSidebar from '../components/InboxSidebar';
 import EmailList from '../components/EmailList';
 import EmailDetail from '../components/EmailDetail';
+import ComposeModal from '../components/ComposeModal';
 import { fetchAccounts, fetchEmails, classifyAll, refreshInbox } from '../api';
 import './InboxPage.css';
 
@@ -17,6 +18,7 @@ function InboxPage() {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localStorage.getItem('selectedAccountId') || 'all');
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
 
@@ -92,6 +94,8 @@ function InboxPage() {
     folderFiltered = emails.filter(e => e.classification?.priority === 'critical' || e.classification?.priority === 'high');
   } else if (filters.folder === 'drafts') {
     folderFiltered = emails.filter(e => e.draft_reply);
+  } else if (filters.folder === 'sent') {
+    folderFiltered = emails.filter(e => e.is_sent);
   }
 
   // Search
@@ -184,6 +188,7 @@ function InboxPage() {
         classifiedCount={emails.filter((e) => e.classification).length}
         unreadCount={emails.filter((e) => !e.is_read).length}
         starredCount={emails.filter((e) => e.is_starred).length}
+        sentCount={emails.filter((e) => e.is_sent).length}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
@@ -206,6 +211,23 @@ function InboxPage() {
           </>
         )}
       </div>
+
+      {/* Floating Compose Button */}
+      <button
+        className="compose-fab"
+        onClick={() => setComposeOpen(true)}
+        title="Compose new email"
+      >
+        <PenSquare size={20} />
+      </button>
+
+      {/* Compose Modal */}
+      <ComposeModal
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        onSent={() => loadEmails()}
+        accounts={accounts}
+      />
     </div>
   );
 }

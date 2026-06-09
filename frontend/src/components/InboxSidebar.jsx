@@ -1,4 +1,4 @@
-import { Search, RefreshCw, Zap, Inbox, Star, AlertTriangle, FileEdit, Mail } from 'lucide-react';
+import { Search, RefreshCw, Zap, Inbox, Star, AlertTriangle, FileEdit, Mail, Send } from 'lucide-react';
 import './InboxSidebar.css';
 
 const PRIORITIES = ['critical', 'high', 'normal', 'low'];
@@ -16,6 +16,7 @@ const FOLDERS = [
     { id: 'starred', label: 'Starred', icon: Star },
     { id: 'critical', label: 'Urgent', icon: AlertTriangle },
     { id: 'drafts', label: 'Has Draft', icon: FileEdit },
+    { id: 'sent', label: 'Sent', icon: Send },
 ];
 
 function InboxSidebar({
@@ -28,6 +29,7 @@ function InboxSidebar({
     classifiedCount,
     unreadCount,
     starredCount,
+    sentCount = 0,
     searchQuery,
     onSearchChange,
 }) {
@@ -105,6 +107,7 @@ function InboxSidebar({
                     {FOLDERS.map(({ id, label, icon: Icon }) => {
                         const count = id === 'unread' ? unreadCount
                             : id === 'starred' ? starredCount
+                            : id === 'sent' ? sentCount
                             : null;
                         return (
                             <button

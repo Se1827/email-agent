@@ -23,6 +23,12 @@ const EMPTY_ACCOUNT = {
   imap_pass: '',
   imap_mailbox: 'INBOX',
   imap_use_ssl: true,
+  smtp_host: '',
+  smtp_port: 587,
+  smtp_user: '',
+  smtp_pass: '',
+  smtp_use_ssl: false,
+  smtp_use_tls: true,
   color: '#3b82f6',
   is_active: true,
 };
@@ -226,6 +232,36 @@ function SettingsPage() {
                     <label className="checkbox-row">
                       <input type="checkbox" checked={form.imap_use_ssl} onChange={(e) => setField('imap_use_ssl', e.target.checked)} />
                       Use SSL
+                    </label>
+                    <div className="account-form-divider">
+                      <span className="account-form-divider-text">SMTP (Outgoing)</span>
+                    </div>
+                    <label>
+                      SMTP Host
+                      <div className="input-with-action">
+                        <input className="input" value={form.smtp_host} onChange={(e) => setField('smtp_host', e.target.value)} placeholder="smtp.gmail.com" />
+                        <button type="button" className="btn-link" onClick={() => setField('smtp_host', form.imap_host)} title="Copy from IMAP host">Same as IMAP</button>
+                      </div>
+                    </label>
+                    <label>
+                      SMTP Port
+                      <input className="input" type="number" value={form.smtp_port} onChange={(e) => setField('smtp_port', e.target.value)} />
+                    </label>
+                    <label>
+                      SMTP Username
+                      <input className="input" value={form.smtp_user} onChange={(e) => setField('smtp_user', e.target.value)} placeholder={form.imap_user || form.email || 'Same as IMAP'} />
+                    </label>
+                    <label>
+                      SMTP Password
+                      <input className="input" type="password" value={form.smtp_pass} onChange={(e) => setField('smtp_pass', e.target.value)} placeholder={form.imap_pass ? 'Same as IMAP' : 'App password'} />
+                    </label>
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={form.smtp_use_ssl} onChange={(e) => { setField('smtp_use_ssl', e.target.checked); if (e.target.checked) setField('smtp_use_tls', false); }} />
+                      SMTP SSL (port 465)
+                    </label>
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={form.smtp_use_tls} onChange={(e) => { setField('smtp_use_tls', e.target.checked); if (e.target.checked) setField('smtp_use_ssl', false); }} />
+                      SMTP STARTTLS (port 587)
                     </label>
                   </>
                 )}

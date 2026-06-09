@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 from src.config import get_settings
 from src.connectors.mock import load_emails as load_mock_emails
 from src.connectors.imap import fetch_emails as fetch_imap_emails
+from src.connectors.smtp import send_email as smtp_send_email
 from src.models.email import (
     AccountConfig,
     CalendarEvent,
@@ -29,6 +31,7 @@ from src.services.accounts import (
     get_account,
     load_accounts,
     list_accounts_summary,
+    resolve_smtp_settings,
     save_accounts,
 )
 from src.services.calendar import (
@@ -467,15 +470,67 @@ async def get_email(email_id: str) -> dict[str, Any]:
 
 @router.get("/emails/{email_id}/thread")
 async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
-    """Return all emails sharing the same thread_id."""
+    """Return all emails sharing the same conversation thread.
+
+    Uses a graph-based approach: walk message_id, in_reply_to, and references
+    transitively to find every email that belongs to the same conversation.
+    """
     _ensure_loaded()
-    email = _get_email(email_id)
-    thread_id = email.thread_id or email.id
-    thread = [
-        e.model_dump(mode="json")
-        for e in _emails.values()
-        if (e.thread_id or e.id) == thread_id
-    ]
+    anchor = _get_email(email_id)
+
+    # Build a lookup table: message_id → email
+    by_msg_id: dict[str, Email] = {}
+    for e in _emails.values():
+        if e.message_id:
+            by_msg_id[e.message_id] = e
+
+    # Collect all message_ids that belong to this thread via union-find walk
+    thread_msg_ids: set[str] = set()
+    queue: list[str] = []
+
+    # Seed the walk with the anchor email’s identifiers
+    for seed_id in [anchor.message_id, anchor.in_reply_to, anchor.thread_id]:
+        if seed_id and seed_id not in thread_msg_ids:
+            thread_msg_ids.add(seed_id)
+            queue.append(seed_id)
+    for ref in anchor.references:
+        if ref not in thread_msg_ids:
+            thread_msg_ids.add(ref)
+            queue.append(ref)
+
+    # BFS: for every message_id we know about, pull in its connections
+    while queue:
+        current = queue.pop()
+        em = by_msg_id.get(current)
+        if em is None:
+            continue
+        for related_id in [em.message_id, em.in_reply_to, em.thread_id]:
+            if related_id and related_id not in thread_msg_ids:
+                thread_msg_ids.add(related_id)
+                queue.append(related_id)
+        for ref in em.references:
+            if ref not in thread_msg_ids:
+                thread_msg_ids.add(ref)
+                queue.append(ref)
+
+    # Collect matching emails: any email whose message_id, in_reply_to,
+    # thread_id, or any reference is in the thread set
+    thread_emails: dict[str, Email] = {anchor.id: anchor}
+    for e in _emails.values():
+        if e.id in thread_emails:
+            continue
+        e_ids = {e.message_id, e.in_reply_to, e.thread_id} | set(e.references)
+        if thread_msg_ids & e_ids:
+            thread_emails[e.id] = e
+
+    # Also match by simple thread_id equality (fallback for emails without
+    # proper RFC headers, e.g. mock data)
+    anchor_thread = anchor.thread_id or anchor.id
+    for e in _emails.values():
+        if e.id not in thread_emails and (e.thread_id or e.id) == anchor_thread:
+            thread_emails[e.id] = e
+
+    thread = [e.model_dump(mode="json") for e in thread_emails.values()]
     thread.sort(key=lambda e: e.get("timestamp", ""))
     return thread
 
@@ -595,27 +650,237 @@ async def draft_email_reply(
 
 
 @router.post("/emails/{email_id}/approve")
-async def approve_draft(email_id: str) -> dict[str, str]:
-    """Approve the current draft reply (simulated send)."""
+async def approve_draft(email_id: str) -> dict[str, Any]:
+    """Approve the current draft reply and send via SMTP."""
     email = _get_email(email_id)
     if email.draft_reply is None:
         raise HTTPException(
             status_code=400,
             detail="No draft to approve. Generate a draft first.",
         )
-    log.info("draft_approved", extra={"email_id": email_id})
-    body_preview = email.draft_reply.body[:80]
+
+    draft_body = email.draft_reply.body
+    # Send the reply via the send-reply logic
+    sent_email = _do_send_reply(
+        original=email,
+        body=draft_body,
+        to_addrs=None,
+        cc_addrs=None,
+    )
+
+    log.info("draft_approved_and_sent", extra={"email_id": email_id})
     safe_record_event(
         "email.approved",
-        {"preview": body_preview},
+        {"preview": draft_body[:80], "sent_message_id": sent_email.message_id},
         subject_id=email.id,
     )
-    _log_activity("approved", f"Draft reply approved for '{email.subject[:40]}'", email.id)
-    # In a real system, this would send the email.
+    _log_activity("approved", f"Reply sent for '{email.subject[:40]}'", email.id)
+    # Clear the draft on the original email and mark as read
     email.draft_reply = None
     email.is_read = True
     _persist_email_state(email)
-    return {"status": "sent", "preview": body_preview}
+    return {
+        "status": "sent",
+        "preview": draft_body[:80],
+        "sent_email": sent_email.model_dump(mode="json"),
+    }
+
+
+# ---- Send / Compose Endpoints -----------------------------------------------
+
+
+class SendReplyRequest(BaseModel):
+    body: str
+    to: list[str] | None = None
+    cc: list[str] | None = None
+
+
+class ComposeRequest(BaseModel):
+    to: list[str]
+    cc: list[str] = []
+    subject: str
+    body: str
+    account_id: str
+
+
+def _do_send_reply(
+    original: Email,
+    body: str,
+    to_addrs: list[str] | None,
+    cc_addrs: list[str] | None,
+) -> Email:
+    """Core logic for sending a reply — used by both send-reply and approve."""
+    cfg = get_settings()
+    account = _resolve_email_account(original)
+
+    smtp_settings = resolve_smtp_settings(account)
+
+    # Build threading headers
+    reply_to_msg_id = original.message_id
+    refs = list(original.references)
+    if original.message_id and original.message_id not in refs:
+        refs.append(original.message_id)
+
+    # Default recipients: reply to sender + original To (excluding ourselves)
+    from_addr = smtp_settings["from_addr"]
+    if to_addrs is None:
+        all_addrs = [original.sender] + original.recipients
+        to_addrs = [a for a in dict.fromkeys(all_addrs) if a.lower() != from_addr.lower()]
+    if cc_addrs is None:
+        cc_addrs = [a for a in original.cc if a.lower() != from_addr.lower()]
+
+    from src.connectors.smtp import _normalize_subject_for_reply
+    reply_subject = _normalize_subject_for_reply(original.subject)
+
+    sent_msg_id = smtp_send_email(
+        host=smtp_settings["host"],
+        port=smtp_settings["port"],
+        username=smtp_settings["username"],
+        password=smtp_settings["password"],
+        use_ssl=smtp_settings["use_ssl"],
+        use_tls=smtp_settings["use_tls"],
+        from_addr=from_addr,
+        from_name=smtp_settings["from_name"],
+        to_addrs=to_addrs,
+        cc_addrs=cc_addrs,
+        subject=reply_subject,
+        body=body,
+        in_reply_to=reply_to_msg_id,
+        references=refs,
+    )
+
+    # Create a sent Email record
+    now = datetime.now(timezone.utc)
+    sent_email = Email(
+        id=f"{account.id}:sent-{hashlib.sha256(sent_msg_id.encode()).hexdigest()[:12]}",
+        inbox=account_inbox(account),
+        account_id=account.id,
+        sender=from_addr,
+        recipients=to_addrs,
+        cc=cc_addrs,
+        subject=reply_subject,
+        body=body,
+        timestamp=now,
+        thread_id=original.thread_id or original.message_id or original.id,
+        message_id=sent_msg_id,
+        in_reply_to=reply_to_msg_id,
+        references=refs,
+        is_sent=True,
+        is_read=True,
+    )
+    _emails[sent_email.id] = sent_email
+    safe_store_email(sent_email, source="sent")
+    _store_email_memory(sent_email)
+    return sent_email
+
+
+def _resolve_email_account(email: Email) -> AccountConfig:
+    """Find the AccountConfig that owns this email."""
+    cfg = get_settings()
+    accounts = load_accounts(cfg.data_dir)
+    if email.account_id:
+        for acc in accounts:
+            if acc.id == email.account_id:
+                return acc
+    # Fallback: first active account
+    for acc in accounts:
+        if acc.is_active:
+            return acc
+    raise HTTPException(status_code=400, detail="No active email account configured.")
+
+
+@router.post("/emails/{email_id}/send-reply")
+async def send_reply(email_id: str, body: SendReplyRequest) -> dict[str, Any]:
+    """Send a reply to an email via SMTP."""
+    original = _get_email(email_id)
+
+    try:
+        sent_email = _do_send_reply(
+            original=original,
+            body=body.body,
+            to_addrs=body.to,
+            cc_addrs=body.cc,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    _log_activity("sent_reply", f"Reply sent for '{original.subject[:40]}'", original.id)
+    safe_record_event(
+        "email.reply_sent",
+        {
+            "original_id": original.id,
+            "sent_message_id": sent_email.message_id,
+            "to": sent_email.recipients,
+        },
+        subject_id=original.id,
+    )
+    return sent_email.model_dump(mode="json")
+
+
+@router.post("/emails/compose")
+async def compose_email(body: ComposeRequest) -> dict[str, Any]:
+    """Compose and send a new email via SMTP."""
+    cfg = get_settings()
+    accounts = load_accounts(cfg.data_dir)
+    account = get_account(accounts, body.account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail=f"Account {body.account_id} not found")
+
+    try:
+        smtp_settings = resolve_smtp_settings(account)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    from_addr = smtp_settings["from_addr"]
+
+    try:
+        sent_msg_id = smtp_send_email(
+            host=smtp_settings["host"],
+            port=smtp_settings["port"],
+            username=smtp_settings["username"],
+            password=smtp_settings["password"],
+            use_ssl=smtp_settings["use_ssl"],
+            use_tls=smtp_settings["use_tls"],
+            from_addr=from_addr,
+            from_name=smtp_settings["from_name"],
+            to_addrs=body.to,
+            cc_addrs=body.cc or [],
+            subject=body.subject,
+            body=body.body,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    now = datetime.now(timezone.utc)
+    sent_email = Email(
+        id=f"{account.id}:sent-{hashlib.sha256(sent_msg_id.encode()).hexdigest()[:12]}",
+        inbox=account_inbox(account),
+        account_id=account.id,
+        sender=from_addr,
+        recipients=body.to,
+        cc=body.cc or [],
+        subject=body.subject,
+        body=body.body,
+        timestamp=now,
+        thread_id=sent_msg_id,
+        message_id=sent_msg_id,
+        is_sent=True,
+        is_read=True,
+    )
+    _emails[sent_email.id] = sent_email
+    safe_store_email(sent_email, source="sent")
+    _store_email_memory(sent_email)
+    _log_activity("composed", f"New email sent: '{body.subject[:40]}'", sent_email.id)
+    safe_record_event(
+        "email.composed",
+        {
+            "sent_message_id": sent_msg_id,
+            "to": body.to,
+            "subject": body.subject,
+        },
+        subject_id=sent_email.id,
+    )
+    return sent_email.model_dump(mode="json")
 
 
 @router.post("/emails/{email_id}/star")
