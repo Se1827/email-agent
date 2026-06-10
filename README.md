@@ -96,6 +96,30 @@ IMAP_FETCH_LIMIT=20
 
 For **Gmail**, you need an [App Password](https://myaccount.google.com/apppasswords) (not your regular password). For **Outlook**, use `imap-mail.outlook.com:993`. Any provider that supports standard IMAP will work.
 
+## Microsoft Graph Integration
+
+You can seamlessly connect a Microsoft 365 / Outlook account using the Microsoft Graph API. This enables advanced features like Teams notifications, calendar scheduling, and OneDrive document sync without relying on basic IMAP.
+
+You can configure the Graph integration directly from the **Settings > Integrations** page in the UI. When enabled, Graph settings will automatically be saved to your `.env` file and take effect immediately.
+
+**To run in Live mode (requires Azure):**
+You must register an App Registration in Azure Active Directory (Microsoft Entra ID) with "Mobile and desktop applications" redirect URIs, and assign `Mail.Read`, `Mail.Send`, `Calendars.ReadWrite`, and `User.Read` Delegated permissions.
+
+```env
+GRAPH_MOCK=false
+AZURE_TENANT_ID=your-tenant-id
+AZURE_CLIENT_ID=your-client-id
+AZURE_CLIENT_SECRET=your-client-secret
+GRAPH_USER_EMAIL=you@domain.com
+```
+
+**To run in Mock mode:**
+Mock mode requires zero Azure credentials and preloads fake emails and events to test the interface. This is enabled by default.
+
+```env
+GRAPH_MOCK=true
+```
+
 ## Tests
 
 ```bash
@@ -209,3 +233,8 @@ The rest of the pipeline (classification, drafting, PII redaction) works unchang
 | `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |
 | `OTEL_SERVICE_NAME` | `email-agent` | Service name for traces |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | -- | Optional OTLP HTTP collector endpoint |
+| `GRAPH_MOCK` | `true` | Toggle mock or live Graph mode |
+| `AZURE_TENANT_ID` | `mock-tenant` | Azure AD Tenant ID |
+| `AZURE_CLIENT_ID` | `mock-client` | Azure AD Client ID |
+| `AZURE_CLIENT_SECRET` | `mock-secret` | Azure AD Client Secret |
+| `GRAPH_USER_EMAIL` | -- | Target graph user email |
