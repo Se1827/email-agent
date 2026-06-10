@@ -240,6 +240,16 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
     cfg = get_settings()
     if account.provider == "mock":
         return load_mock_emails(cfg.data_dir / "seed_emails.json")
+    if account.provider == "graph":
+        from src.connectors.graph import graph
+        raw_msgs = graph.list_messages(top=cfg.imap_fetch_limit)
+        emails = []
+        for m in raw_msgs:
+            try:
+                emails.append(Email.model_validate(graph.to_agent_email(m)))
+            except Exception as exc:
+                log.exception("graph_email_parse_failed", extra={"msg_id": m.get("id"), "error": str(exc)})
+        return emails
     return fetch_imap_emails(
         host=account.imap_host or cfg.imap_host,
         port=account.imap_port or cfg.imap_port,
@@ -284,9 +294,49 @@ def _ensure_loaded() -> None:
                 ),
             )
     if not _calendar:
-        _calendar.extend(load_events(get_settings().data_dir / "calendar.json"))
-        for event in _calendar:
-            safe_store_calendar_event(event, source="mock")
+        cfg = get_settings()
+        is_graph_active = False
+        for account in load_accounts(cfg.data_dir):
+            if account.is_active and account.provider == "graph":
+                is_graph_active = True
+                break
+
+        if is_graph_active:
+            try:
+                from src.connectors.graph import graph
+                raw_events = graph.list_events(days_ahead=7)
+                for ev in raw_events:
+                    try:
+                        start_str = ev["start"]["dateTime"]
+                        end_str = ev["end"]["dateTime"]
+                        if not start_str.endswith("+00:00") and not start_str.endswith("Z") and not ("+" in start_str or "-" in start_str[10:]):
+                            start_str += "+00:00"
+                        if not end_str.endswith("+00:00") and not end_str.endswith("Z") and not ("+" in end_str or "-" in end_str[10:]):
+                            end_str += "+00:00"
+                        start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+
+                        event = CalendarEvent(
+                            id=ev.get("id"),
+                            title=ev.get("subject", "(no subject)"),
+                            start=start_dt,
+                            end=end_dt,
+                            description=ev.get("bodyPreview", "") or ev.get("body", {}).get("content", ""),
+                            location=ev.get("location", {}).get("displayName", ""),
+                            attendees=[a.get("emailAddress", {}).get("address", "") for a in ev.get("attendees", [])],
+                            account_id="testing",
+                        )
+                        _calendar.append(event)
+                        safe_store_calendar_event(event, source="microsoft_graph")
+                    except Exception as e:
+                        log.exception("graph_calendar_parse_failed", extra={"event_id": ev.get("id"), "error": str(e)})
+            except Exception as exc:
+                log.exception("graph_calendar_load_failed", extra={"error": str(exc)})
+
+        if not _calendar:
+            _calendar.extend(load_events(cfg.data_dir / "calendar.json"))
+            for event in _calendar:
+                safe_store_calendar_event(event, source="mock")
 
 
 def _load_emails_from_storage(inbox: str, *, account: AccountConfig | None = None) -> None:
@@ -674,8 +724,31 @@ async def approve_draft(email_id: str) -> dict[str, Any]:
         {"preview": draft_body[:80], "sent_message_id": sent_email.message_id},
         subject_id=email.id,
     )
-    _log_activity("approved", f"Reply sent for '{email.subject[:40]}'", email.id)
-    # Clear the draft on the original email and mark as read
+    _log_activity("approved", f"Draft reply approved for '{email.subject[:40]}'", email.id)
+    
+    # If the provider is graph, send the email live!
+    cfg = get_settings()
+    accounts = load_accounts(cfg.data_dir)
+    account = next((a for a in accounts if a.id == email.account_id), None)
+    if account and account.provider == "graph":
+        try:
+            from src.connectors.graph import graph
+            raw_msg_id = email.id.split(":", 1)[1] if ":" in email.id else email.id
+            # Send reply
+            graph.send_message(
+                to=email.sender,
+                subject=f"Re: {email.subject}",
+                body_html=email.draft_reply.body,
+                reply_to_id=raw_msg_id
+            )
+            _log_activity("sent", f"Reply sent to {email.sender} via Microsoft Graph", email.id)
+        except Exception as exc:
+            log.exception("graph_send_failed", extra={"email_id": email.id})
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to send email via Microsoft Graph: {exc}",
+            )
+            
     email.draft_reply = None
     email.is_read = True
     _persist_email_state(email)

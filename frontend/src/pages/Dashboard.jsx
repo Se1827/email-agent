@@ -24,7 +24,27 @@ const SEVERITY_ICONS = {
 
 function Dashboard() {
   const [data, setData] = useState(null);
+  const [graphStatus, setGraphStatus] = useState(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/graph/graph/status").then(r => r.json()).then(j => setGraphStatus(j)).catch(() => {});
+  }, []);
+
   const [loading, setLoading] = useState(true);
+  const connectGraph = async () => {
+    setGraphLoading(true);
+    try {
+      const res = await fetch("/api/graph/graph/status");
+      const json = await res.json();
+      setGraphStatus(json);
+      alert("Connected! Mode: " + json.mode);
+    } catch (e) {
+      alert("Failed: " + e.message);
+    } finally {
+      setGraphLoading(false);
+    }
+  };
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -246,7 +266,7 @@ function Dashboard() {
                 </div>
                 <div>
                   <div className="integration-title">Microsoft 365</div>
-                  <span className="integration-badge">Coming Soon</span>
+                  <span className="integration-badge" style={{background: graphStatus?.mode === "live" ? "#22c55e22" : "#f9731622", color: graphStatus?.mode === "live" ? "#22c55e" : "#f97316"}}>{graphStatus?.mode === "live" ? "Live" : "Mock Mode"}</span>
                 </div>
               </div>
               <p className="integration-desc">
@@ -257,9 +277,7 @@ function Dashboard() {
                 <div className="integration-feature"><Bell size={13} /> Teams Alerts</div>
                 <div className="integration-feature"><CalendarDays size={13} /> Calendar Sync</div>
               </div>
-              <button className="btn btn-secondary" disabled style={{width: '100%', marginTop: 12}}>
-                Connect Microsoft 365
-              </button>
+              <button className="btn btn-primary" onClick={connectGraph} style={{width: "100%", marginTop: 12}}>Connect Microsoft 365</button>
             </div>
           </section>
 
@@ -290,3 +308,5 @@ function Dashboard() {
 }
 
 export default Dashboard;
+
+
