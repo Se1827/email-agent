@@ -1,11 +1,12 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Inbox, Calendar, Settings } from 'lucide-react';
+import { LayoutDashboard, Inbox, Calendar, Settings, Mail } from 'lucide-react';
 import './AppNav.css';
 
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inbox', icon: Inbox, label: 'Inbox' },
   { to: '/calendar', icon: Calendar, label: 'Calendar' },
+  { to: '/outlook', icon: Mail, label: 'Outlook' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 

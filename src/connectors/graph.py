@@ -14,6 +14,7 @@ import uuid
 import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+import shutil
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 IS_MOCK       = os.getenv("GRAPH_MOCK", "true").lower() == "true"
@@ -25,14 +26,17 @@ GRAPH_BASE    = "https://graph.microsoft.com/v1.0"
 TOKEN_CACHE   = Path(__file__).parent.parent.parent / ".graph_token_cache.json"
 
 SCOPES = [
+    "https://graph.microsoft.com/Contacts.Read",
     "https://graph.microsoft.com/Mail.Read",
     "https://graph.microsoft.com/Mail.Send",
-    "https://graph.microsoft.com/Calendars.Read",
+    "https://graph.microsoft.com/Calendars.ReadWrite",
     "https://graph.microsoft.com/User.Read",
+    "https://graph.microsoft.com/Files.Read",
     "offline_access",
 ]
 
-# ── Mock data (realistic Graph API shape) ──────────────────────────────────────
+
+# ── Mock data ──────────────────────────────────────────────────────────────────
 _now = datetime.now(timezone.utc)
 
 _MOCK_MESSAGES = [
@@ -42,11 +46,7 @@ _MOCK_MESSAGES = [
         "bodyPreview": "Panel needs prototype + 2-min video by 5 PM today.",
         "body": {
             "contentType": "html",
-            "content": (
-                "<p>Hi,</p><p>The judging panel needs the final prototype link and a "
-                "2-minute video by <b>5:00 PM today</b>. Please confirm receipt.</p>"
-                "<p>Best,<br>Rahul</p>"
-            ),
+            "content": "<p>Hi,</p><p>The judging panel needs the final prototype link and a 2-minute video by <b>5:00 PM today</b>.</p>",
         },
         "from": {"emailAddress": {"name": "Rahul Sharma", "address": "rahul.sharma@kiit.ac.in"}},
         "toRecipients": [{"emailAddress": {"name": "You", "address": USER_EMAIL}}],
@@ -63,10 +63,7 @@ _MOCK_MESSAGES = [
         "bodyPreview": "Please review deck and share inputs by Friday EOW.",
         "body": {
             "contentType": "html",
-            "content": (
-                "<p>Hi Team,</p><p>Please review the attached Q3 deck and share "
-                "your inputs by <b>Friday EOW</b>.</p><p>Thanks,<br>Priya</p>"
-            ),
+            "content": "<p>Hi Team,</p><p>Please review the attached Q3 deck and share your inputs by <b>Friday EOW</b>.</p>",
         },
         "from": {"emailAddress": {"name": "Priya Menon", "address": "priya.menon@kiit.ac.in"}},
         "toRecipients": [{"emailAddress": {"name": "You", "address": USER_EMAIL}}],
@@ -76,6 +73,21 @@ _MOCK_MESSAGES = [
         "hasAttachments": True,
         "conversationId": "conv-002",
         "categories": [],
+    },
+]
+
+_MOCK_CONTACTS = [
+    {
+        "id": "contact-001",
+        "displayName": "Alice Example",
+        "emailAddresses": [{"address": "alice@example.com", "name": "Alice Example"}],
+        "mobilePhone": "+1-555-0100",
+    },
+    {
+        "id": "contact-002",
+        "displayName": "Bob Example",
+        "emailAddresses": [{"address": "bob@example.com", "name": "Bob Example"}],
+        "mobilePhone": "+1-555-0101",
     },
 ]
 
@@ -98,7 +110,8 @@ _MOCK_EVENTS = [
     },
 ]
 
-_MOCK_ATTACHMENTS: dict[str, list] = {
+
+_MOCK_ATTACHMENTS = {
     "graph-msg-001": [
         {
             "id": "att-001",
@@ -110,7 +123,16 @@ _MOCK_ATTACHMENTS: dict[str, list] = {
 }
 
 
-# ── Auth helper (live mode – device code flow) ─────────────────────────────────
+_MOCK_GROUPS = [
+    {"id": "group-001", "displayName": "Engineering", "mail": "eng@kiit.ac.in"},
+    {"id": "group-002", "displayName": "HR", "mail": "hr@kiit.ac.in"},
+]
+
+_MOCK_DRIVE_ITEMS = [
+    {"id": "file-001", "name": "ProjectPlan.docx", "size": 102400, "folder": False},
+    {"id": "folder-001", "name": "Shared", "folder": True},
+]
+
 
 def _load_cached_token() -> dict | None:
     if TOKEN_CACHE.exists():
@@ -141,7 +163,7 @@ def _refresh_token(token_data: dict) -> dict:
             "refresh_token": token_data["refresh_token"],
             "scope": " ".join(SCOPES),
         },
-        timeout=10,
+        timeout=30,
     )
     resp.raise_for_status()
     new_token = resp.json()
@@ -153,6 +175,7 @@ def _refresh_token(token_data: dict) -> dict:
 def _device_code_login() -> dict:
     """Prompt user to sign in via browser (device code flow)."""
     import httpx
+    import time
 
     # Step 1: get device code
     resp = httpx.post(
@@ -161,42 +184,46 @@ def _device_code_login() -> dict:
             "client_id": CLIENT_ID,
             "scope": " ".join(SCOPES),
         },
-        timeout=10,
+        timeout=60,
     )
     resp.raise_for_status()
     device_data = resp.json()
 
-    print("\n" + "="*60)
-    print("MICROSOFT LOGIN REQUIRED")
-    print("="*60)
-    print(f"\n1. Open this URL in your browser:\n   {device_data['verification_uri']}")
-    print(f"\n2. Enter this code: {device_data['user_code']}")
-    print("\n3. Sign in with your KIIT account (23053333@kiit.ac.in)")
-    print("\nWaiting for you to sign in...")
-    print("="*60 + "\n")
+    print("\n" + "="*60, flush=True)
+    print("MICROSOFT LOGIN REQUIRED", flush=True)
+    print("="*60, flush=True)
+    print(f"\n1. Open this URL in your browser:\n   {device_data.get('verification_uri', 'https://microsoft.com/devicelogin')}", flush=True)
+    print(f"\n2. Enter this code: {device_data['user_code']}", flush=True)
+    print(f"\n3. Sign in with your Microsoft account", flush=True)
+    print("\nWaiting for you to sign in...", flush=True)
+    print("="*60 + "\n", flush=True)
 
     # Step 2: poll for token
     interval = device_data.get("interval", 5)
     expires_in = device_data.get("expires_in", 900)
-    import time
     start = time.time()
 
     while time.time() - start < expires_in:
         time.sleep(interval)
-        poll = httpx.post(
-            f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token",
-            data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                "client_id": CLIENT_ID,
-                "device_code": device_data["device_code"],
-            },
-            timeout=10,
-        )
-        poll_data = poll.json()
+        try:
+            with httpx.Client(timeout=httpx.Timeout(60.0, connect=30.0)) as client:
+                poll = client.post(
+                    f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token",
+                    data={
+                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                        "client_id": CLIENT_ID,
+                        "client_secret": CLIENT_SECRET,
+                        "device_code": device_data["device_code"],
+                    },
+                )
+            poll_data = poll.json()
+        except httpx.TimeoutException:
+            continue
+
         if "access_token" in poll_data:
             poll_data["expires_at"] = datetime.utcnow().timestamp() + poll_data.get("expires_in", 3600)
             _save_token(poll_data)
-            print("✅ Signed in successfully!\n")
+            print("Signed in successfully!\n")
             return poll_data
         elif poll_data.get("error") == "authorization_pending":
             continue
@@ -230,8 +257,6 @@ def _headers() -> dict:
 class GraphConnector:
     """Microsoft Graph connector. Same pattern as imap.py / mock.py."""
 
-    # ── Mail ──────────────────────────────────────────────────────────────────
-
     def list_messages(self, top: int = 20) -> list[dict]:
         if IS_MOCK:
             return _MOCK_MESSAGES[:top]
@@ -247,18 +272,143 @@ class GraphConnector:
                     "receivedDateTime,isRead,importance,hasAttachments,conversationId"
                 ),
             },
-            timeout=15,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json().get("value", [])
+
+    def list_all_messages(self) -> list[dict]:
+        """Retrieve all messages from the inbox, handling pagination.
+
+        Returns the complete list of messages available to the authenticated user.
+        """
+        if IS_MOCK:
+            return _MOCK_MESSAGES
+        import httpx
+        messages: list[dict] = []
+        url = f"{GRAPH_BASE}/me/mailFolders/inbox/messages"
+        params = {
+            "$top": 100,
+            "$select": (
+                "id,subject,bodyPreview,body,from,toRecipients,receivedDateTime," 
+                "isRead,importance,hasAttachments,conversationId"
+            ),
+        }
+        while url:
+            resp = httpx.get(url, headers=_headers(), params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            messages.extend(data.get("value", []))
+            # The nextLink already contains all query params, so clear params for subsequent calls
+            url = data.get("@odata.nextLink")
+            params = None
+        return messages
+
+    def get_access_token(self) -> str:
+        """Public method to obtain a cached access token, refreshing if needed."""
+        return _get_token()
+
+    def persist_credentials(self, destination: str) -> None:
+        """Copy the token cache to the given destination.
+
+        Parameters
+        ----------
+        destination: str
+            Path (file or directory) where the token cache should be saved.
+            If a directory is given, the cache file is written inside it with its
+            original name.
+        """
+        dest_path = Path(destination)
+        if dest_path.is_dir():
+            dest_path = dest_path / TOKEN_CACHE.name
+        shutil.copy2(TOKEN_CACHE, dest_path)
+        print(f"Credentials persisted to {dest_path}")
+
+    def list_contacts(self, top: int = 20) -> list[dict]:
+        """Return a list of contacts (mock or real)."""
+        if IS_MOCK:
+            return _MOCK_CONTACTS[:top]
+        import httpx
+        resp = httpx.get(
+            f"{GRAPH_BASE}/me/contacts",
+            headers=_headers(),
+            params={"$top": top},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json().get("value", [])
+
+    def get_user_profile(self) -> dict:
+        """Return the authenticated user's profile info."""
+        if IS_MOCK:
+            return {"displayName": "Mock User", "mail": USER_EMAIL, "id": "user-001"}
+        import httpx
+        resp = httpx.get(f"{GRAPH_BASE}/me", headers=_headers(), timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    def list_groups(self, top: int = 20) -> list[dict]:
+        """Return a list of groups (mock or real)."""
+        if IS_MOCK:
+            return _MOCK_GROUPS[:top]
+        import httpx
+        resp = httpx.get(
+            f"{GRAPH_BASE}/me/memberOf",
+            headers=_headers(),
+            params={"$top": top},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json().get("value", [])
+
+    def list_drive_items(self, top: int = 20) -> list[dict]:
+        """Return a list of OneDrive items (mock or real)."""
+        if IS_MOCK:
+            return _MOCK_DRIVE_ITEMS[:top]
+        import httpx
+        resp = httpx.get(
+            f"{GRAPH_BASE}/me/drive/root/children",
+            headers=_headers(),
+            params={"$top": top},
+            timeout=30,
         )
         resp.raise_for_status()
         return resp.json().get("value", [])
 
     def get_message(self, msg_id: str) -> dict:
+        """Fetch a single mail message by ID."""
         if IS_MOCK:
             return next((m for m in _MOCK_MESSAGES if m["id"] == msg_id), _MOCK_MESSAGES[0])
         import httpx
-        resp = httpx.get(f"{GRAPH_BASE}/me/messages/{msg_id}", headers=_headers(), timeout=10)
+        resp = httpx.get(f"{GRAPH_BASE}/me/mailFolders/inbox/messages/{msg_id}", headers=_headers(), timeout=30)
         resp.raise_for_status()
         return resp.json()
+
+    def list_thread_messages(self, conversation_id: str) -> list[dict]:
+        """Fetch all messages in a conversation thread (both sent and received) by conversation ID."""
+        if IS_MOCK:
+            return [m for m in _MOCK_MESSAGES if m.get("conversationId") == conversation_id]
+        import httpx
+        resp = httpx.get(
+            f"{GRAPH_BASE}/me/messages",
+            headers=_headers(),
+            params={
+                "$filter": f"conversationId eq '{conversation_id}'",
+                "$select": (
+                    "id,subject,bodyPreview,body,from,toRecipients,"
+                    "receivedDateTime,isRead,importance,hasAttachments,conversationId"
+                ),
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        value = resp.json().get("value", [])
+        try:
+            value.sort(key=lambda x: x.get("receivedDateTime", ""))
+        except Exception:
+            pass
+        return value
+
 
     def send_message(self, to: str, subject: str, body_html: str, reply_to_id: str | None = None) -> dict:
         if IS_MOCK:
@@ -270,9 +420,10 @@ class GraphConnector:
                 "sentAt": datetime.utcnow().isoformat() + "Z",
                 "mock": True,
             }
-        import httpx, json as _json
+        import httpx
+        import json as _json
         if reply_to_id:
-            url = f"{GRAPH_BASE}/me/messages/{reply_to_id}/reply"
+            url = f"{GRAPH_BASE}/me/mailFolders/inbox/messages/{reply_to_id}/reply"
             payload = {"comment": body_html}
         else:
             url = f"{GRAPH_BASE}/me/sendMail"
@@ -284,7 +435,7 @@ class GraphConnector:
                 },
                 "saveToSentItems": True,
             }
-        resp = httpx.post(url, headers=_headers(), content=_json.dumps(payload), timeout=15)
+        resp = httpx.post(url, headers=_headers(), content=_json.dumps(payload), timeout=30)
         resp.raise_for_status()
         return {"status": "sent", "to": to, "subject": subject}
 
@@ -293,14 +444,12 @@ class GraphConnector:
             return _MOCK_ATTACHMENTS.get(msg_id, [])
         import httpx
         resp = httpx.get(
-            f"{GRAPH_BASE}/me/messages/{msg_id}/attachments",
+            f"{GRAPH_BASE}/me/mailFolders/inbox/messages/{msg_id}/attachments",
             headers=_headers(),
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         return resp.json().get("value", [])
-
-    # ── Calendar ──────────────────────────────────────────────────────────────
 
     def list_events(self, days_ahead: int = 1) -> list[dict]:
         if IS_MOCK:
@@ -315,7 +464,7 @@ class GraphConnector:
                 "endDateTime": (now + timedelta(days=days_ahead)).isoformat() + "Z",
                 "$orderby": "start/dateTime",
             },
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         return resp.json().get("value", [])
@@ -329,7 +478,8 @@ class GraphConnector:
                 "end": {"dateTime": end_iso, "timeZone": "UTC"},
                 "mock": True,
             }
-        import httpx, json as _json
+        import httpx
+        import json as _json
         payload: dict = {
             "subject": subject,
             "body": {"contentType": "text", "content": body},
@@ -340,7 +490,7 @@ class GraphConnector:
             payload["attendees"] = [
                 {"emailAddress": {"address": a}, "type": "required"} for a in attendees
             ]
-        resp = httpx.post(f"{GRAPH_BASE}/me/events", headers=_headers(), content=_json.dumps(payload), timeout=10)
+        resp = httpx.post(f"{GRAPH_BASE}/me/events", headers=_headers(), content=_json.dumps(payload), timeout=30)
         resp.raise_for_status()
         return resp.json()
 
@@ -358,60 +508,114 @@ class GraphConnector:
         deadline = datetime.fromisoformat(deadline_iso)
         conflicts = self.detect_conflicts(deadline_iso)
         event = self.create_event(
-            subject=f"⏰ MailMind deadline – {msg_id}",
+            subject=f"Deadline – {msg_id}",
             start_iso=(deadline - timedelta(hours=1)).isoformat(),
             end_iso=deadline_iso,
-            body="Auto-created by MailMind agent based on detected email deadline.",
+            body="Auto-created by Pluemail agent based on detected email deadline.",
         )
         return {"event": event, "conflicts": conflicts}
-
-    # ── Teams ─────────────────────────────────────────────────────────────────
-
-    def notify_teams(self, channel_id: str, message: str) -> dict:
-        if IS_MOCK:
-            return {
-                "id": f"teams-{uuid.uuid4().hex[:8]}",
-                "mock": True,
-                "message": message,
-                "ts": datetime.utcnow().isoformat() + "Z",
-            }
-        import httpx, json as _json
-        resp = httpx.post(
-            f"{GRAPH_BASE}/teams/{channel_id}/messages",
-            headers=_headers(),
-            content=_json.dumps({"body": {"content": message}}),
-            timeout=10,
-        )
-        resp.raise_for_status()
-        return resp.json()
 
     def get_presence(self, email: str) -> dict:
         if IS_MOCK:
             return {"id": email, "availability": "Available", "activity": "Available", "mock": True}
         import httpx
-        resp = httpx.get(f"{GRAPH_BASE}/users/{email}/presence", headers=_headers(), timeout=10)
+        resp = httpx.get(f"{GRAPH_BASE}/users/{email}/presence", headers=_headers(), timeout=30)
         resp.raise_for_status()
         return resp.json()
 
-    # ── Conversion helper ─────────────────────────────────────────────────────
-
     def to_agent_email(self, m: dict) -> dict:
+        import re
         sender_obj = m.get("from", {}).get("emailAddress", {})
         body_obj = m.get("body", {})
+        raw_body = body_obj.get("content", m.get("bodyPreview", ""))
+        content_type = body_obj.get("contentType", "text").lower()
+        # Strip HTML tags for plain-text preview/AI use
+        if content_type == "html":
+            # Replace paragraph and line break tags with newlines
+            text = re.sub(r"(?i)<br\s*/?>", "\n", raw_body)
+            text = re.sub(r"(?i)</p>", "\n\n", text)
+            text = re.sub(r"(?i)</div>", "\n", text)
+            # Strip other HTML tags
+            text = re.sub(r"<[^>]+>", "", text)
+            # Clean up horizontal whitespace but preserve newlines
+            lines = []
+            for line in text.splitlines():
+                cleaned_line = re.sub(r"[ \t]+", " ", line).strip()
+                lines.append(cleaned_line)
+            plain_body = "\n".join(lines).strip()
+            # Collapse more than two consecutive newlines
+            plain_body = re.sub(r"\n{3,}", "\n\n", plain_body)
+            # Decode HTML entities (&nbsp; &lt; &gt; etc.)
+            import html as _html
+            plain_body = _html.unescape(plain_body)
+        else:
+            plain_body = raw_body
+
+        # Parse nested messages from quoted text
+        sub_messages = []
+        remaining = plain_body
+        current_sender = sender_obj.get("address", sender_obj.get("name", ""))
+        current_time = m.get("receivedDateTime", "")
+        
+        while remaining:
+            # Look for the next quote header
+            match = re.search(r"(?im)^On\s+[A-Za-z]{3},\s+\d+\s+[A-Za-z]{3}\s+\d{4}.*?wrote:", remaining)
+            if not match:
+                match = re.search(r"(?im)^On\s+[A-Za-z]{3,10},\s+[A-Za-z]{3,10}\s+\d+.*?,?\s+.*?\s+wrote:", remaining)
+            
+            if match:
+                start, end = match.span()
+                msg_body = remaining[:start].strip()
+                if msg_body:
+                    sub_messages.append({
+                        "sender": current_sender,
+                        "body": msg_body,
+                        "timestamp": current_time,
+                    })
+                
+                header = match.group(0)
+                next_sender = ""
+                email_match = re.search(r"<([^>]+)>", header)
+                if email_match:
+                    next_sender = email_match.group(1)
+                else:
+                    name_match = re.search(r"On\s+[^,]+,\s+([^,<>]+)", header)
+                    if name_match:
+                        next_sender = name_match.group(1).strip()
+                    else:
+                        next_sender = "Previous Sender"
+                
+                current_sender = next_sender
+                current_time = ""
+                remaining = remaining[end:].strip()
+            else:
+                if remaining.strip():
+                    sub_messages.append({
+                        "sender": current_sender,
+                        "body": remaining.strip(),
+                        "timestamp": current_time,
+                    })
+                break
+
         return {
             "id": m["id"],
             "subject": m.get("subject", "(no subject)"),
-            "sender": sender_obj.get("name", sender_obj.get("address", "")),
-            "sender_email": sender_obj.get("address", ""),
-            "body": body_obj.get("content", m.get("bodyPreview", "")),
+            "sender": sender_obj.get("address", sender_obj.get("name", "")),
+            "recipients": [r.get("emailAddress", {}).get("address", "") for r in m.get("toRecipients", [])],
+            "body": plain_body,           # plain text for AI/classification
+            "body_html": raw_body if content_type == "html" else None,  # HTML for rendering
+            "snippet": m.get("bodyPreview", plain_body[:120]),
             "timestamp": m.get("receivedDateTime", ""),
+            "thread_id": m.get("conversationId", ""),
             "is_read": m.get("isRead", True),
+            "is_starred": False,
+            "labels": m.get("categories", []),
             "importance": m.get("importance", "normal"),
             "has_attachments": m.get("hasAttachments", False),
-            "conversation_id": m.get("conversationId", ""),
             "source": "microsoft_graph",
             "classification": None,
             "draft_reply": None,
+            "sub_messages": sub_messages if len(sub_messages) > 1 else [],
         }
 
 
@@ -425,5 +629,7 @@ if __name__ == "__main__":
     print(f"Emails ({len(msgs)}):")
     for m in msgs:
         c = graph.to_agent_email(m)
-        print(f"  [{c['importance'].upper()}] {c['subject']} — from {c['sender']}")
-    print("\n✅ Test passed")
+        print(f"  [{c['importance'].upper()}] {c['subject']} -- from {c['sender']}")
+    print("\nTest passed")
+
+

@@ -98,6 +98,16 @@ def _default_account_from_env() -> list[AccountConfig]:
                 color="#3b82f6",
             )
         ]
+    if source == "graph":
+        return [
+            AccountConfig(
+                id="graph-default",
+                name="Microsoft 365",
+                email=os.getenv("GRAPH_USER_EMAIL", "se1827@outlook.com"),
+                provider="graph",
+                color="#6366f1",
+            )
+        ]
     return [
         AccountConfig(
             id=_stable_account_id(os.getenv("IMAP_USER", "")),

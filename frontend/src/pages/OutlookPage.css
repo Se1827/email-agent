@@ -1,0 +1,710 @@
+/* ============================================================
+   OutlookPage.css — Microsoft 365 Integrated Panel
+   ============================================================ */
+
+/* Page shell */
+.outlook-page {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* Header */
+.ol-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.ol-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.ol-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--gradient-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+}
+.ol-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+.ol-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Status badge */
+.ol-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ol-status-live {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.ol-status-mock {
+  background: rgba(249, 115, 22, 0.12);
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.25);
+}
+
+/* Tab bar */
+.ol-tabs {
+  display: flex;
+  gap: var(--space-1);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.ol-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+.ol-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ol-tab-active {
+  background: var(--gradient-accent);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+/* Content area */
+.ol-content {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Section page wrapper */
+.ol-section-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.ol-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.ol-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Mail layout */
+.ol-mail-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: var(--space-4);
+  height: calc(100vh - 260px);
+  min-height: 400px;
+}
+.ol-mail-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ol-mail-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ol-mail-list-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ol-mail-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.ol-mail-item:hover { background: var(--bg-hover); }
+.ol-mail-item.ol-selected { background: var(--bg-selected); }
+.ol-mail-item-body { flex: 1; min-width: 0; }
+.ol-mail-item-from {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ol-mail-item-subject {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.ol-mail-item-preview {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ol-mail-item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.ol-mail-item-time { font-size: 10px; color: var(--text-muted); }
+.ol-unread .ol-mail-item-from { color: var(--accent); }
+.ol-unread-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Mail detail / reader */
+.ol-mail-detail {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: var(--space-5);
+}
+.ol-mail-reader { display: flex; flex-direction: column; gap: var(--space-4); }
+.ol-mail-subject { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.ol-mail-from-row { display: flex; align-items: center; gap: var(--space-3); }
+.ol-mail-from-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ol-mail-from-time { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.ol-mail-body {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.ol-mail-iframe {
+  width: 100%;
+  height: 220px;
+  max-height: 220px;
+  flex: 1;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color-scheme: light;
+}
+
+/* Compose */
+.ol-compose { display: flex; flex-direction: column; gap: var(--space-3); height: 100%; }
+.ol-compose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+}
+.ol-compose textarea.input { flex: 1; }
+
+/* Avatar */
+.ol-avatar {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* Loader */
+.ol-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-10);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.ol-spin { animation: spin 0.8s linear infinite; }
+
+/* Error */
+.ol-error-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  border-radius: var(--radius-md);
+  color: var(--error);
+  font-size: 13px;
+}
+
+/* Calendar */
+.ol-event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+.ol-event-card {
+  display: flex;
+  overflow: hidden;
+  padding: var(--space-4);
+  gap: var(--space-3);
+  transition: transform var(--transition-fast);
+}
+.ol-event-card:hover { transform: translateY(-2px); }
+.ol-event-bar {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--gradient-accent);
+  flex-shrink: 0;
+}
+.ol-event-content { flex: 1; min-width: 0; }
+.ol-event-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ol-event-time {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.ol-event-location { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+.ol-event-attendees { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.ol-attendee-chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: var(--radius-full);
+}
+
+/* Contacts */
+.ol-search-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text-muted);
+}
+.ol-search-input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 13px;
+  flex: 1;
+}
+.ol-search-input::placeholder { color: var(--text-muted); }
+.ol-contacts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+.ol-contact-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  transition: transform var(--transition-fast);
+}
+.ol-contact-card:hover { transform: translateY(-2px); }
+.ol-contact-info { flex: 1; min-width: 0; }
+.ol-contact-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ol-contact-email { font-size: 11px; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+.ol-contact-phone { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
+
+/* Files */
+.ol-files-list { overflow: hidden; }
+.ol-file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition-fast);
+}
+.ol-file-row:last-child { border-bottom: none; }
+.ol-file-row:hover { background: var(--bg-hover); }
+.ol-file-icon { font-size: 20px; flex-shrink: 0; }
+.ol-file-info { flex: 1; min-width: 0; }
+.ol-file-name { font-size: 13px; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ol-file-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Profile */
+.ol-profile-card {
+  max-width: 520px;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+.ol-profile-name { font-size: 20px; font-weight: 700; color: var(--text-primary); }
+.ol-profile-email { font-size: 13px; color: var(--text-muted); }
+.ol-profile-fields {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.ol-profile-field {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* Groups */
+.ol-groups-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.ol-group-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  transition: transform var(--transition-fast);
+}
+.ol-group-card:hover { transform: translateY(-1px); }
+.ol-group-info { flex: 1; min-width: 0; }
+.ol-group-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ol-group-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.ol-group-mail { font-size: 11px; color: var(--accent); margin-top: 2px; }
+.ol-group-type-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Teams */
+.ol-presence-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.ol-presence-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.ol-presence-status { font-weight: 600; color: var(--text-primary); }
+.ol-presence-activity { color: var(--text-muted); }
+
+/* Shared form card */
+.ol-form-card {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ol-form-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+.ol-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.ol-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .outlook-page { padding: var(--space-4); }
+  .ol-mail-layout { grid-template-columns: 1fr; height: auto; }
+  .ol-mail-list { max-height: 320px; overflow-y: auto; }
+  .ol-form-row { grid-template-columns: 1fr; }
+  .ol-contacts-grid { grid-template-columns: 1fr; }
+  .ol-event-grid { grid-template-columns: 1fr; }
+}
+
+/* ── AI action row ──────────────────────────────────────────── */
+.ol-mail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* AI button variants */
+.btn-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: rgba(139, 92, 246, 0.1);
+  color: #a78bfa;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-ai:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #c4b5fd;
+}
+.btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ai-primary {
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.4);
+}
+.btn-ai-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6d28d9 0%, #4338ca 100%);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.55);
+  color: #fff;
+}
+
+/* Draft quality group */
+.btn-cal {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #10b981;
+}
+.btn-cal:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.6);
+  color: #34d399;
+}
+.ol-ai-panel-cal {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.07);
+}
+.ol-ai-panel-cal .ol-ai-panel-title { color: #10b981; }
+.ol-cal-event-info { display: flex; flex-direction: column; gap: 5px; }
+.ol-cal-event-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ol-cal-event-time { font-size: 11px; color: #34d399; }
+.ol-cal-attendees { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+
+.ol-draft-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+.ol-quality-select {
+  padding: 6px 8px;
+  background: rgba(139, 92, 246, 0.08);
+  border: none;
+  border-right: 1px solid rgba(139, 92, 246, 0.35);
+  color: #a78bfa;
+  font-family: var(--font-family);
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+}
+.ol-quality-select option { background: var(--bg-secondary); color: var(--text-primary); }
+.ol-draft-group .btn-ai-primary {
+  border-radius: 0;
+  border: none;
+}
+
+/* AI error */
+.ol-ai-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-3) var(--space-4);
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  border-radius: var(--radius-sm);
+  color: #f87171;
+  font-size: 12px;
+}
+
+/* AI result panel */
+.ol-ai-panel {
+  padding: var(--space-4);
+  background: rgba(139, 92, 246, 0.06);
+  border: 1px solid rgba(139, 92, 246, 0.18);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  animation: fadeSlideIn 0.25s ease;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ol-ai-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+/* Classification chips */
+.ol-ai-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ol-ai-chip {
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+.ol-ai-chip-cat {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+}
+.ol-ai-chip-conf {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+}
+.ol-ai-reasoning {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-style: italic;
+}
+
+/* Summary text */
+.ol-ai-summary-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+/* Email Thread styles */
+.ol-mail-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+.ol-thread-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: var(--space-4);
+}
+.ol-thread-message {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  background: var(--bg-secondary);
+  transition: transform var(--transition-fast);
+}
+.ol-thread-message.ol-sent-by-me {
+  background: rgba(139, 92, 246, 0.03);
+  border-color: rgba(139, 92, 246, 0.2);
+}
+.ol-thread-message-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.ol-thread-message-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ol-thread-message-sender {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ol-thread-message-time {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.ol-thread-message-body {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
