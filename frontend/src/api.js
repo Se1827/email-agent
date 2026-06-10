@@ -135,6 +135,10 @@ export function deleteCalendarEvent(id) {
     return request(`/calendar/events/${id}`, { method: 'DELETE' });
 }
 
+export function syncCalendarEvents() {
+    return request('/calendar/sync', { method: 'POST' });
+}
+
 // ---- AI ----
 export function aiComposeEmail(prompt, quality = 'balanced') {
     return request('/emails/ai-compose', {

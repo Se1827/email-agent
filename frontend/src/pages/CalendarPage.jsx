@@ -3,7 +3,7 @@ import {
   CalendarDays, Plus, ChevronLeft, ChevronRight,
   Clock, MapPin, Users, Trash2, X, Sparkles, Link2
 } from 'lucide-react';
-import { fetchCalendarEvents, createCalendarEvent, deleteCalendarEvent } from '../api';
+import { fetchCalendarEvents, createCalendarEvent, deleteCalendarEvent, syncCalendarEvents } from '../api';
 import './CalendarPage.css';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -12,10 +12,11 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function CalendarPage() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [newEvent, setNewEvent] = useState({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1', is_all_day: false });
+  const [newEvent, setNewEvent] = useState({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1', is_all_day: false, sync_to_graph: false });
 
   useEffect(() => { loadEvents(); }, []);
 
@@ -39,7 +40,7 @@ function CalendarPage() {
       });
       await loadEvents();
       setShowCreate(false);
-      setNewEvent({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1', is_all_day: false });
+      setNewEvent({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1', is_all_day: false, sync_to_graph: false });
     } catch (err) {
       console.error('Create failed:', err);
     }
@@ -51,6 +52,23 @@ function CalendarPage() {
       setEvents(events.filter(e => e.id !== id));
     } catch (err) {
       console.error('Delete failed:', err);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await syncCalendarEvents();
+      if (res.status === 'skipped') {
+        alert('Sync skipped: ' + res.message);
+      } else {
+        await loadEvents();
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+      alert('Sync failed: ' + err.message);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -91,8 +109,8 @@ function CalendarPage() {
           </p>
         </div>
         <div className="calendar-header-actions">
-          <button className="btn btn-secondary" disabled title="Coming Soon">
-            <Link2 size={14} /> Sync Calendar
+          <button className="btn btn-secondary" onClick={handleSync} disabled={syncing} title="Sync with Microsoft Graph">
+            <Link2 size={14} /> {syncing ? 'Syncing...' : 'Sync Calendar'}
           </button>
           <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
             <Plus size={14} /> New Event
@@ -235,6 +253,13 @@ function CalendarPage() {
 
               <label className="form-label">Description</label>
               <textarea className="input" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} placeholder="Optional details" rows={3} />
+
+              <div className="form-row" style={{ marginTop: '12px' }}>
+                <label className="form-checkbox">
+                  <input type="checkbox" checked={newEvent.sync_to_graph} onChange={e => setNewEvent({...newEvent, sync_to_graph: e.target.checked})} />
+                  <span>Sync to Microsoft Graph</span>
+                </label>
+              </div>
 
               <label className="form-label">Color</label>
               <div className="color-picker">
