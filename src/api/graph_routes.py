@@ -412,8 +412,8 @@ Body: {body}"""
         date = details.get("date", today)
         start_time = details.get("start_time", "14:00")
         end_time   = details.get("end_time",   "15:00")
-        start_iso  = f"{date}T{start_time}:00Z"
-        end_iso    = f"{date}T{end_time}:00Z"
+        start_iso  = f"{date}T{start_time}:00"
+        end_iso    = f"{date}T{end_time}:00"
         title      = details.get("title") or subject or "Meeting"
         attendees  = details.get("attendees") or [sender]
         description = details.get("description", f"Meeting scheduled from email: {subject}")

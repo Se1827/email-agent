@@ -159,6 +159,11 @@
   align-items: center;
   gap: var(--space-2);
 }
+.ol-mail-list-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
 .ol-mail-item {
   display: flex;
   align-items: flex-start;

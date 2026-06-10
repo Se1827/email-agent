@@ -488,7 +488,7 @@ class GraphConnector:
         }
         if attendees:
             payload["attendees"] = [
-                {"emailAddress": {"address": a}, "type": "required"} for a in attendees
+                {"emailAddress": {"address": a}, "type": "required"} for a in attendees if a and a.strip()
             ]
         resp = httpx.post(f"{GRAPH_BASE}/me/events", headers=_headers(), content=_json.dumps(payload), timeout=30)
         resp.raise_for_status()

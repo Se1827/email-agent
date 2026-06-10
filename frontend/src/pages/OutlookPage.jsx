@@ -210,7 +210,7 @@ function MailTab() {
         const d = await gfetch('/mail/add-to-calendar', { method: 'POST', body: JSON.stringify({ message_id: selected.id }) });
         if (d.status === 'created') {
           setAiCalEvent(d);
-          showToast('\u2705 Event added to your calendar!');
+          showToast('Event added to your calendar!');
         } else {
           setAiError(d.message || 'No meeting details found in this email');
         }
@@ -271,45 +271,47 @@ function MailTab() {
             <button className="btn-icon" onClick={load} title="Refresh"><RefreshCw size={14}/></button>
           </div>
         </div>
-
-        {loading && <SectionLoader />}
-        {error && <ErrorCard msg={error} onRetry={load} />}
-        {!loading && !error && messages.length === 0 && (
-          <div className="empty-state"><Mail size={40}/><p className="empty-state-title">No messages</p></div>
-        )}
-        {messages.map(m => (
-          <div
-            key={m.id}
-            className={`ol-mail-item ${!m.is_read ? 'ol-unread' : ''} ${selected?.id === m.id ? 'ol-selected' : ''}`}
-            onClick={() => setSelected(m)}
-          >
-            <Avatar name={m.sender || '?'} size={34} />
-            <div className="ol-mail-item-body">
-              <div className="ol-mail-item-from">{(m.sender || '').split('@')[0]}</div>
-              <div className="ol-mail-item-subject">{m.subject}</div>
-              {bulkClassifications[m.id] ? (
-                <div style={{ marginTop: 4, display: 'flex', gap: 4 }}>
-                  <span className="ol-ai-chip" style={{ fontSize: 10, padding: '2px 6px', background: PRIORITY_COLORS[bulkClassifications[m.id].priority] || '#6366f1' }}>
-                    {bulkClassifications[m.id].priority?.toUpperCase()}
+        
+        <div className="ol-mail-list-content">
+          {loading && <SectionLoader />}
+          {error && <ErrorCard msg={error} onRetry={load} />}
+          {!loading && !error && messages.length === 0 && (
+            <div className="empty-state"><Mail size={40}/><p className="empty-state-title">No messages</p></div>
+          )}
+          {messages.map(m => (
+            <div
+              key={m.id}
+              className={`ol-mail-item ${!m.is_read ? 'ol-unread' : ''} ${selected?.id === m.id ? 'ol-selected' : ''}`}
+              onClick={() => setSelected(m)}
+            >
+              <Avatar name={m.sender || '?'} size={34} />
+              <div className="ol-mail-item-body">
+                <div className="ol-mail-item-from">{(m.sender || '').split('@')[0]}</div>
+                <div className="ol-mail-item-subject">{m.subject}</div>
+                {bulkClassifications[m.id] ? (
+                  <div style={{ marginTop: 4, display: 'flex', gap: 4 }}>
+                    <span className="ol-ai-chip" style={{ fontSize: 10, padding: '2px 6px', background: PRIORITY_COLORS[bulkClassifications[m.id].priority] || '#6366f1' }}>
+                      {bulkClassifications[m.id].priority?.toUpperCase()}
+                    </span>
+                    <span className="ol-ai-chip ol-ai-chip-cat" style={{ fontSize: 10, padding: '2px 6px' }}>
+                      {bulkClassifications[m.id].category}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="ol-mail-item-preview">{(m.snippet || m.body || '').slice(0, 80)}</div>
+                )}
+              </div>
+              <div className="ol-mail-item-meta">
+                {m.timestamp && (
+                  <span className="ol-mail-item-time">
+                    {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  <span className="ol-ai-chip ol-ai-chip-cat" style={{ fontSize: 10, padding: '2px 6px' }}>
-                    {bulkClassifications[m.id].category}
-                  </span>
-                </div>
-              ) : (
-                <div className="ol-mail-item-preview">{(m.snippet || m.body || '').slice(0, 80)}</div>
-              )}
+                )}
+                {!m.is_read && <span className="ol-unread-dot"/>}
+              </div>
             </div>
-            <div className="ol-mail-item-meta">
-              {m.timestamp && (
-                <span className="ol-mail-item-time">
-                  {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-              {!m.is_read && <span className="ol-unread-dot"/>}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* Right: message detail or compose */}
