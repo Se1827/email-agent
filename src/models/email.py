@@ -44,10 +44,19 @@ class Email(BaseModel):
     account_id: Optional[str] = None
     sender: str
     recipients: list[str]
+    cc: list[str] = Field(default_factory=list)
     subject: str
     body: str
     timestamp: datetime
     thread_id: Optional[str] = None
+
+    # RFC-2822 threading headers.
+    message_id: Optional[str] = None
+    in_reply_to: Optional[str] = None
+    references: list[str] = Field(default_factory=list)
+
+    # Sent flag — True for emails sent from this client.
+    is_sent: bool = False
 
     # UI state.
     is_read: bool = False
@@ -128,6 +137,13 @@ class AccountConfig(BaseModel):
     imap_pass: str = ""
     imap_mailbox: str = "INBOX"
     imap_use_ssl: bool = True
+    # SMTP settings for sending mail.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""    # falls back to imap_user / email
+    smtp_pass: str = ""    # falls back to imap_pass
+    smtp_use_ssl: bool = False   # direct SSL (port 465)
+    smtp_use_tls: bool = True    # STARTTLS (port 587)
     color: str = "#3b82f6"
     is_active: bool = True
 

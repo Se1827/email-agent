@@ -41,6 +41,20 @@ export function approveDraft(id) {
     return request(`/emails/${id}/approve`, { method: 'POST' });
 }
 
+export function sendReply(emailId, body, to, cc) {
+    return request(`/emails/${emailId}/send-reply`, {
+        method: 'POST',
+        body: JSON.stringify({ body, to: to || null, cc: cc || null }),
+    });
+}
+
+export function composeEmail(to, cc, subject, body, accountId) {
+    return request('/emails/compose', {
+        method: 'POST',
+        body: JSON.stringify({ to, cc, subject, body, account_id: accountId }),
+    });
+}
+
 export function classifyAll(accountId) {
     const params = accountId ? `?account_id=${accountId}` : '';
     return request(`/emails/classify-all${params}`, { method: 'POST' });
@@ -122,6 +136,13 @@ export function deleteCalendarEvent(id) {
 }
 
 // ---- AI ----
+export function aiComposeEmail(prompt, quality = 'balanced') {
+    return request('/emails/ai-compose', {
+        method: 'POST',
+        body: JSON.stringify({ prompt, quality }),
+    });
+}
+
 export function askAI(question, contextType, contextId) {
     return request('/ai/ask', {
         method: 'POST',
@@ -137,3 +158,4 @@ export function askAI(question, contextType, contextId) {
 export function fetchStorageStats() {
     return request('/storage/stats');
 }
+

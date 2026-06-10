@@ -23,6 +23,12 @@ const EMPTY_ACCOUNT = {
   imap_pass: '',
   imap_mailbox: 'INBOX',
   imap_use_ssl: true,
+  smtp_host: '',
+  smtp_port: 587,
+  smtp_user: '',
+  smtp_pass: '',
+  smtp_use_ssl: false,
+  smtp_use_tls: true,
   color: '#3b82f6',
   is_active: true,
 };
@@ -64,6 +70,7 @@ function SettingsPage() {
       ...EMPTY_ACCOUNT,
       ...account,
       imap_pass: '',
+      smtp_pass: '',
     });
     setAccountError(null);
   };
@@ -87,6 +94,8 @@ function SettingsPage() {
         ...form,
         imap_port: Number(form.imap_port) || 993,
         imap_user: form.imap_user || form.email,
+        smtp_port: Number(form.smtp_port) || 587,
+        smtp_user: form.smtp_user || form.email,
       };
       if (editingId === 'new') {
         await createAccount(payload);
@@ -138,32 +147,27 @@ function SettingsPage() {
             Add mock or IMAP accounts here. Active accounts are loaded into the inbox and stored with separate encrypted inbox scopes.
           </p>
           {accountError && <div className="settings-error">{accountError}</div>}
-          <div className="settings-accounts-list">
+          <div className="settings-account-list">
             {accounts.map((acc) => (
-              <div key={acc.id} className="settings-account-row">
-                <div className="settings-account-avatar" style={{ background: acc.color }}>
+              <div key={acc.id} className={`settings-account-card ${!acc.is_active ? 'inactive' : ''}`}>
+                <div className="account-card-avatar" style={{ background: acc.color }}>
                   {acc.name.charAt(0)}
                 </div>
-                <div className="settings-account-info">
-                  <div className="settings-account-name">{acc.name}</div>
-                  <div className="settings-account-email">{acc.email}</div>
-                  {acc.provider !== 'mock' && (
-                    <div className="settings-account-meta">
-                      {acc.imap_host || 'No host'} · {acc.imap_mailbox || 'INBOX'}
-                    </div>
-                  )}
+                <div className="account-card-info">
+                  <div className="account-card-name">
+                    {acc.name}
+                    {!acc.is_active && <span className="settings-tag">Disabled</span>}
+                  </div>
+                  <div className="account-card-email">{acc.email}</div>
                 </div>
-                <div className="settings-account-tags">
-                  <span className="settings-tag">{acc.provider}</span>
-                  {acc.is_active ? (
-                    <span className="settings-tag settings-tag-active"><Wifi size={10} /> Active</span>
-                  ) : (
-                    <span className="settings-tag settings-tag-inactive"><WifiOff size={10} /> Inactive</span>
-                  )}
+                <div className="account-card-actions">
+                  <button className="btn-icon" onClick={() => startEdit(acc)} title="Edit Account">
+                    <Pencil size={14} />
+                  </button>
+                  <button className="btn-icon danger" onClick={() => handleDelete(acc)} title="Delete Account">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <button className="btn-icon" onClick={() => startEdit(acc)} title="Edit account">
-                  <Pencil size={14} />
-                </button>
               </div>
             ))}
             {!loading && accounts.length === 0 && (
@@ -226,6 +230,36 @@ function SettingsPage() {
                     <label className="checkbox-row">
                       <input type="checkbox" checked={form.imap_use_ssl} onChange={(e) => setField('imap_use_ssl', e.target.checked)} />
                       Use SSL
+                    </label>
+                    <div className="account-form-divider">
+                      <span className="account-form-divider-text">SMTP (Outgoing)</span>
+                    </div>
+                    <label>
+                      SMTP Host
+                      <div className="input-with-action">
+                        <input className="input" value={form.smtp_host} onChange={(e) => setField('smtp_host', e.target.value)} placeholder="smtp.gmail.com" />
+                        <button type="button" className="btn-link" onClick={() => setField('smtp_host', form.imap_host)} title="Copy from IMAP host">Same as IMAP</button>
+                      </div>
+                    </label>
+                    <label>
+                      SMTP Port
+                      <input className="input" type="number" value={form.smtp_port} onChange={(e) => setField('smtp_port', e.target.value)} />
+                    </label>
+                    <label>
+                      SMTP Username
+                      <input className="input" value={form.smtp_user} onChange={(e) => setField('smtp_user', e.target.value)} placeholder={form.imap_user || form.email || 'Same as IMAP'} />
+                    </label>
+                    <label>
+                      SMTP Password
+                      <input className="input" type="password" value={form.smtp_pass} onChange={(e) => setField('smtp_pass', e.target.value)} placeholder={form.imap_pass ? 'Same as IMAP' : 'App password'} />
+                    </label>
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={form.smtp_use_ssl} onChange={(e) => { setField('smtp_use_ssl', e.target.checked); if (e.target.checked) setField('smtp_use_tls', false); }} />
+                      SMTP SSL (port 465)
+                    </label>
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={form.smtp_use_tls} onChange={(e) => { setField('smtp_use_tls', e.target.checked); if (e.target.checked) setField('smtp_use_ssl', false); }} />
+                      SMTP STARTTLS (port 587)
                     </label>
                   </>
                 )}

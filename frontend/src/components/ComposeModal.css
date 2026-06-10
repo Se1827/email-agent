@@ -1,0 +1,256 @@
+/* ---- Compose Modal ---- */
+
+.compose-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--space-6);
+}
+
+.compose-modal {
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: 0 -8px 48px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.compose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+.compose-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.compose-close {
+  color: var(--text-muted);
+}
+
+.compose-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.compose-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.compose-from-field {
+  background: var(--bg-tertiary);
+}
+
+.compose-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  min-width: 50px;
+  flex-shrink: 0;
+}
+
+.compose-input {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  padding: 6px 0 !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+}
+
+.compose-input:focus {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.compose-select {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  padding: 6px 0 !important;
+  font-size: 13px !important;
+}
+
+.compose-cc-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+}
+
+.compose-cc-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.compose-body-wrapper {
+  flex: 1;
+  padding: var(--space-3) var(--space-5);
+  min-height: 200px;
+}
+
+.compose-body {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  padding: var(--space-3);
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+
+.compose-body::placeholder {
+  color: var(--text-muted);
+}
+
+.compose-error {
+  padding: var(--space-2) var(--space-5);
+  background: rgba(244, 63, 94, 0.1);
+  border-top: 1px solid rgba(244, 63, 94, 0.2);
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.compose-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.compose-footer-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.compose-from-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.compose-from-hint strong {
+  color: var(--text-secondary);
+}
+
+.compose-footer-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.compose-send-btn {
+  min-width: 100px;
+}
+
+/* Spin animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ---- AI Compose ---- */
+.compose-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+
+.compose-ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.compose-ai-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.compose-ai-toggle.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.compose-ai-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.compose-ai-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  font-family: var(--font-family);
+}
+
+.compose-ai-input::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.compose-ai-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

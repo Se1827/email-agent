@@ -48,6 +48,14 @@ class Settings:
     otel_service_name: str
     otel_exporter_otlp_endpoint: str
 
+    # SMTP defaults (used when per-account SMTP is not configured).
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_pass: str
+    smtp_use_ssl: bool
+    smtp_use_tls: bool
+
     # Draft quality default.
     default_draft_quality: str
 
@@ -82,6 +90,12 @@ class Settings:
             otel_enabled=os.getenv("OTEL_ENABLED", "false").lower() == "true",
             otel_service_name=os.getenv("OTEL_SERVICE_NAME", "email-agent"),
             otel_exporter_otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+            smtp_host=os.getenv("SMTP_HOST", ""),
+            smtp_port=int(os.getenv("SMTP_PORT", "587")),
+            smtp_user=os.getenv("SMTP_USER", ""),
+            smtp_pass=os.getenv("SMTP_PASS", ""),
+            smtp_use_ssl=os.getenv("SMTP_USE_SSL", "false").lower() == "true",
+            smtp_use_tls=os.getenv("SMTP_USE_TLS", "true").lower() == "true",
             default_draft_quality=os.getenv("DEFAULT_DRAFT_QUALITY", "balanced"),
         )
 

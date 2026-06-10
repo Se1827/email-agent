@@ -1,5 +1,6 @@
 .inbox-page {
   display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
   position: relative;
@@ -12,9 +13,7 @@
 }
 
 .account-switcher {
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
+  position: relative;
   z-index: 20;
 }
 
@@ -112,4 +111,33 @@
 
 .account-switcher-dot.all {
   background: var(--gradient-cool);
+}
+
+/* ---- Floating Compose Button ---- */
+.compose-fab {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  z-index: 50;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--gradient-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+  transition: all var(--transition-normal);
+}
+
+.compose-fab:hover {
+  transform: scale(1.08) translateY(-2px);
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.5);
+}
+
+.compose-fab:active {
+  transform: scale(0.96);
 }

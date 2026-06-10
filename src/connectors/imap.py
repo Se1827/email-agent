@@ -145,18 +145,41 @@ def fetch_emails(
             date = _parse_date(msg)
             body = _extract_body(msg)
             recipients = _parse_recipients(msg)
-            msg_id = msg.get("Message-ID")
-            thread_id = msg.get("In-Reply-To") or msg.get("References", "").split()[0] if msg.get("References") else None
+
+            # Extract CC addresses
+            cc_addrs: list[str] = []
+            for cc_hdr in (msg.get_all("Cc") or []):
+                parsed = email.utils.getaddresses([cc_hdr])
+                cc_addrs.extend(addr for _, addr in parsed if addr)
+
+            # RFC-2822 threading headers
+            raw_msg_id = msg.get("Message-ID", "").strip()
+            raw_in_reply_to = msg.get("In-Reply-To", "").strip() or None
+            raw_references_hdr = msg.get("References", "")
+            ref_list = raw_references_hdr.split() if raw_references_hdr else []
+
+            # thread_id = first reference (thread root), or In-Reply-To,
+            # or own Message-ID (standalone email).
+            thread_id = (
+                ref_list[0] if ref_list
+                else raw_in_reply_to
+                or raw_msg_id
+                or None
+            )
 
             emails.append(Email(
-                id=_stable_id(msg_id, subject, str(date)),
+                id=_stable_id(raw_msg_id or None, subject, str(date)),
                 inbox=inbox,
                 sender=sender,
                 recipients=recipients,
+                cc=cc_addrs,
                 subject=subject,
                 body=body[:5000],  # cap very long emails
                 timestamp=date,
                 thread_id=thread_id,
+                message_id=raw_msg_id or None,
+                in_reply_to=raw_in_reply_to,
+                references=ref_list,
             ))
 
         log.info("imap_fetched", extra={"count": len(emails)})

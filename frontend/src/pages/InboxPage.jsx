@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronDown } from 'lucide-react';
-import InboxSidebar from '../components/InboxSidebar';
+import { ChevronDown, PenSquare, Menu } from 'lucide-react';
+import InboxNavbar from '../components/InboxNavbar';
 import EmailList from '../components/EmailList';
 import EmailDetail from '../components/EmailDetail';
+import ComposeModal from '../components/ComposeModal';
 import { fetchAccounts, fetchEmails, classifyAll, refreshInbox } from '../api';
 import './InboxPage.css';
 
@@ -17,6 +18,7 @@ function InboxPage() {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localStorage.getItem('selectedAccountId') || 'all');
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
 
@@ -92,6 +94,8 @@ function InboxPage() {
     folderFiltered = emails.filter(e => e.classification?.priority === 'critical' || e.classification?.priority === 'high');
   } else if (filters.folder === 'drafts') {
     folderFiltered = emails.filter(e => e.draft_reply);
+  } else if (filters.folder === 'sent') {
+    folderFiltered = emails.filter(e => e.is_sent);
   }
 
   // Search
@@ -130,51 +134,54 @@ function InboxPage() {
     return new Date(b.timestamp) - new Date(a.timestamp);
   });
 
-  return (
-    <div className="inbox-page" id="inbox-page">
-      <div className="account-switcher">
-        <button
-          className="account-switcher-button"
-          onClick={() => setAccountMenuOpen((open) => !open)}
-          title="Switch account"
+  const accountSwitcher = (
+    <div className="account-switcher">
+      <button
+        className="account-switcher-button"
+        onClick={() => setAccountMenuOpen((open) => !open)}
+        title="Switch account"
+      >
+        <span
+          className="account-switcher-avatar"
+          style={{ background: selectedAccount?.color || 'var(--gradient-accent)' }}
         >
-          <span
-            className="account-switcher-avatar"
-            style={{ background: selectedAccount?.color || 'var(--gradient-accent)' }}
+          {selectedAccount ? selectedAccount.name.charAt(0).toUpperCase() : 'A'}
+        </span>
+        <ChevronDown size={13} />
+      </button>
+      {accountMenuOpen && (
+        <div className="account-switcher-menu">
+          <button
+            className={`account-switcher-item ${selectedAccountId === 'all' ? 'active' : ''}`}
+            onClick={() => chooseAccount('all')}
           >
-            {selectedAccount ? selectedAccount.name.charAt(0).toUpperCase() : 'A'}
-          </span>
-          <ChevronDown size={13} />
-        </button>
-        {accountMenuOpen && (
-          <div className="account-switcher-menu">
+            <span className="account-switcher-dot all" />
+            <span>
+              <strong>All accounts</strong>
+              <small>{accounts.filter((a) => a.is_active).length || accounts.length} configured</small>
+            </span>
+          </button>
+          {accounts.map((account) => (
             <button
-              className={`account-switcher-item ${selectedAccountId === 'all' ? 'active' : ''}`}
-              onClick={() => chooseAccount('all')}
+              key={account.id}
+              className={`account-switcher-item ${selectedAccountId === account.id ? 'active' : ''}`}
+              onClick={() => chooseAccount(account.id)}
             >
-              <span className="account-switcher-dot all" />
+              <span className="account-switcher-dot" style={{ background: account.color }} />
               <span>
-                <strong>All accounts</strong>
-                <small>{accounts.filter((a) => a.is_active).length || accounts.length} configured</small>
+                <strong>{account.name}</strong>
+                <small>{account.email}</small>
               </span>
             </button>
-            {accounts.map((account) => (
-              <button
-                key={account.id}
-                className={`account-switcher-item ${selectedAccountId === account.id ? 'active' : ''}`}
-                onClick={() => chooseAccount(account.id)}
-              >
-                <span className="account-switcher-dot" style={{ background: account.color }} />
-                <span>
-                  <strong>{account.name}</strong>
-                  <small>{account.email}</small>
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      <InboxSidebar
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="inbox-page" id="inbox-page">
+      <InboxNavbar
         filters={filters}
         onFiltersChange={setFilters}
         onRefresh={handleRefresh}
@@ -184,8 +191,10 @@ function InboxPage() {
         classifiedCount={emails.filter((e) => e.classification).length}
         unreadCount={emails.filter((e) => !e.is_read).length}
         starredCount={emails.filter((e) => e.is_starred).length}
+        sentCount={emails.filter((e) => e.is_sent).length}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        accountSwitcher={accountSwitcher}
       />
       <div className="inbox-content">
         {error ? (
@@ -206,6 +215,23 @@ function InboxPage() {
           </>
         )}
       </div>
+
+      {/* Floating Compose Button */}
+      <button
+        className="compose-fab"
+        onClick={() => setComposeOpen(true)}
+        title="Compose new email"
+      >
+        <PenSquare size={20} />
+      </button>
+
+      {/* Compose Modal */}
+      <ComposeModal
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        onSent={() => loadEmails()}
+        accounts={accounts}
+      />
     </div>
   );
 }

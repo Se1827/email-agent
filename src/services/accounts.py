@@ -146,9 +146,67 @@ def list_accounts_summary(accounts: list[AccountConfig]) -> list[dict[str, Any]]
             "imap_user": a.imap_user,
             "imap_mailbox": a.imap_mailbox,
             "imap_use_ssl": a.imap_use_ssl,
+            "smtp_host": a.smtp_host,
+            "smtp_port": a.smtp_port,
+            "smtp_user": a.smtp_user or a.imap_user or a.email,
+            "smtp_use_ssl": a.smtp_use_ssl,
+            "smtp_use_tls": a.smtp_use_tls,
+            "has_smtp": bool(a.smtp_host),
             "color": a.color,
             "is_active": a.is_active,
             "has_password": bool(a.imap_pass),
         }
         for a in accounts
     ]
+
+
+def resolve_smtp_settings(account: AccountConfig) -> dict[str, Any]:
+    """Resolve SMTP connection settings from account config.
+
+    Fallback chain: account SMTP fields → account IMAP creds → env defaults.
+    """
+    from src.config import get_settings
+
+    cfg = get_settings()
+
+    host = account.smtp_host or cfg.smtp_host or account.imap_host or cfg.imap_host
+    port = account.smtp_port if account.smtp_host else (cfg.smtp_port or 587)
+    user = (
+        account.smtp_user
+        or account.imap_user
+        or account.email
+        or cfg.smtp_user
+        or cfg.imap_user
+    )
+    password = (
+        account.smtp_pass
+        or account.imap_pass
+        or cfg.smtp_pass
+        or cfg.imap_pass
+    )
+    use_ssl = account.smtp_use_ssl if account.smtp_host else cfg.smtp_use_ssl
+    use_tls = account.smtp_use_tls if account.smtp_host else cfg.smtp_use_tls
+    from_addr = account.email or user
+    from_name = account.name or ""
+
+    if not host:
+        raise RuntimeError(
+            f"No SMTP host configured for account '{account.name}'. "
+            "Set smtp_host in the account or SMTP_HOST in .env."
+        )
+    if not password:
+        raise RuntimeError(
+            f"No SMTP password configured for account '{account.name}'. "
+            "Set smtp_pass in the account or SMTP_PASS in .env."
+        )
+
+    return {
+        "host": host,
+        "port": port,
+        "username": user,
+        "password": password,
+        "use_ssl": use_ssl,
+        "use_tls": use_tls,
+        "from_addr": from_addr,
+        "from_name": from_name,
+    }

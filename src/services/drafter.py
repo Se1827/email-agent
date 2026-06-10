@@ -9,6 +9,8 @@ from src.llm.prompts import (
     DRAFT_QUALITY_PARAMS,
     DRAFT_SYSTEM,
     DRAFT_USER_TEMPLATES,
+    COMPOSE_SYSTEM,
+    COMPOSE_USER_TEMPLATES,
 )
 from src.models.email import (
     CalendarEvent,
@@ -152,3 +154,30 @@ def _redact_new_pii(text: str, *, allowed_values: set[str]):
 
 def _pii_type(entity_type: str) -> str:
     return "ssn" if entity_type == "US_SSN" else entity_type.lower()
+
+
+async def ai_compose(prompt: str, quality: str = "balanced") -> str:
+    """Generate a brand new email draft from a user prompt."""
+    quality = quality if quality in COMPOSE_USER_TEMPLATES else "balanced"
+    template = COMPOSE_USER_TEMPLATES[quality]
+    temperature, max_tokens = DRAFT_QUALITY_PARAMS[quality]
+
+    user_msg = template.format(prompt=prompt)
+
+    raw = await llm.chat(
+        messages=[
+            {"role": "system", "content": COMPOSE_SYSTEM},
+            {"role": "user", "content": user_msg},
+        ],
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    log.info(
+        "ai_compose_generated",
+        extra={
+            "quality": quality,
+            "prompt_length": len(prompt),
+        },
+    )
+    return raw.strip()
