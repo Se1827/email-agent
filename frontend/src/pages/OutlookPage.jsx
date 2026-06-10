@@ -43,7 +43,7 @@ function StatusBadge({ mode }) {
   return (
     <span className={`ol-status-badge ${live ? 'ol-status-live' : 'ol-status-mock'}`}>
       {live ? <Wifi size={10} /> : <WifiOff size={10} />}
-      {live ? 'Live · Microsoft 365' : 'Mock Mode'}
+      {live ? 'Live · Microsoft Graph' : 'Mock Mode'}
     </span>
   );
 }
@@ -938,7 +938,7 @@ export default function OutlookPage() {
             <Mail size={20}/>
           </div>
           <div>
-            <h1 className="ol-title">Microsoft 365</h1>
+            <h1 className="ol-title">Microsoft Graph</h1>
             <p className="ol-subtitle">Outlook · Teams · OneDrive · Contacts</p>
           </div>
         </div>

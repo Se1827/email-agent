@@ -100,9 +100,10 @@ def graph_update_config(config: GraphConfig) -> dict:
 @router.get("/status")
 def graph_status() -> dict:
     """Returns connector mode (mock / live) and config hints."""
+    from src.connectors.graph import USER_EMAIL
     return {
         "mode": "mock" if IS_MOCK else "live",
-        "user_email": graph.__class__.__module__,  # non-sensitive
+        "user_email": USER_EMAIL,
         "tip": (
             "Running in mock mode — set GRAPH_MOCK=false + Azure creds in .env to go live."
             if IS_MOCK

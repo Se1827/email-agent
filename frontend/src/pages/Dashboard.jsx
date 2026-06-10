@@ -28,23 +28,11 @@ function Dashboard() {
   const [graphLoading, setGraphLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/graph/graph/status").then(r => r.json()).then(j => setGraphStatus(j)).catch(() => {});
+    fetch("/api/graph/status").then(r => r.json()).then(j => setGraphStatus(j)).catch(() => {});
   }, []);
 
   const [loading, setLoading] = useState(true);
-  const connectGraph = async () => {
-    setGraphLoading(true);
-    try {
-      const res = await fetch("/api/graph/graph/status");
-      const json = await res.json();
-      setGraphStatus(json);
-      alert("Connected! Mode: " + json.mode);
-    } catch (e) {
-      alert("Failed: " + e.message);
-    } finally {
-      setGraphLoading(false);
-    }
-  };
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -257,7 +245,7 @@ function Dashboard() {
             </div>
           </section>
 
-          {/* Microsoft Graph Placeholder */}
+          {/* Microsoft Graph Integration */}
           <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.2s'}}>
             <div className="integration-card glass-card">
               <div className="integration-header">
@@ -265,19 +253,21 @@ function Dashboard() {
                   <Link2 size={20} />
                 </div>
                 <div>
-                  <div className="integration-title">Microsoft 365</div>
+                  <div className="integration-title">Microsoft Graph</div>
                   <span className="integration-badge" style={{background: graphStatus?.mode === "live" ? "#22c55e22" : "#f9731622", color: graphStatus?.mode === "live" ? "#22c55e" : "#f97316"}}>{graphStatus?.mode === "live" ? "Live" : "Mock Mode"}</span>
                 </div>
               </div>
               <p className="integration-desc">
-                Connect Microsoft Graph to sync Outlook emails, Teams notifications, and SharePoint documents.
+                {graphStatus?.user_email && graphStatus.user_email !== "Unknown"
+                  ? `Connected as ${graphStatus.user_email}` 
+                  : 'Connect Microsoft Graph to sync Outlook emails, Teams notifications, and SharePoint documents.'}
               </p>
               <div className="integration-features">
                 <div className="integration-feature"><ShieldCheck size={13} /> Outlook Sync</div>
                 <div className="integration-feature"><Bell size={13} /> Teams Alerts</div>
                 <div className="integration-feature"><CalendarDays size={13} /> Calendar Sync</div>
               </div>
-              <button className="btn btn-primary" onClick={connectGraph} style={{width: "100%", marginTop: 12}}>Connect Microsoft 365</button>
+              <button className="btn btn-secondary" onClick={() => navigate('/settings')} style={{width: "100%", marginTop: 12}}>Manage Connection</button>
             </div>
           </section>
 

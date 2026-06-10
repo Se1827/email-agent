@@ -6,7 +6,7 @@ const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inbox', icon: Inbox, label: 'Inbox' },
   { to: '/calendar', icon: Calendar, label: 'Calendar' },
-  { to: '/outlook', icon: Mail, label: 'Outlook' },
+  { to: '/outlook', icon: Mail, label: 'Microsoft Graph' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -35,7 +35,7 @@ function AppNav() {
               key={to}
               to={to}
               className={`nav-link ${isActive ? 'nav-link-active' : ''}`}
-              id={`nav-${label.toLowerCase()}`}
+              id={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
             >
               <div className="nav-link-indicator" />
               <Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
