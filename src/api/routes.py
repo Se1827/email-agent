@@ -50,8 +50,10 @@ from src.storage import (
     email_content_hash,
     load_email_states,
     load_email_state,
+    load_calendar_events,
     safe_record_event,
     safe_store_calendar_event,
+    safe_delete_calendar_event_record,
     safe_store_email,
     safe_store_semantic_memory,
     safe_store_thread_state,
@@ -301,6 +303,17 @@ def _ensure_loaded() -> None:
 
         if not _calendar:
             _calendar.extend(load_events(cfg.data_dir / "calendar.json"))
+            
+            # Merge events from DB
+            db_events = load_calendar_events()
+            for db_ev in db_events:
+                try:
+                    event = CalendarEvent.model_validate(db_ev)
+                    # Deduplicate by ID
+                    if not any(e.id == event.id for e in _calendar):
+                        _calendar.append(event)
+                except Exception as exc:
+                    log.error("Failed to load db calendar event", extra={"error": str(exc), "event": db_ev.get("id")})
             for event in _calendar:
                 safe_store_calendar_event(event, source="mock")
 
@@ -1328,6 +1341,7 @@ async def delete_calendar_event(event_id: str) -> dict[str, str]:
 
     if not delete_event(_calendar, event_id):
         raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+    safe_delete_calendar_event_record(event_id)
     return {"status": "deleted", "event_id": event_id}
 
 @router.post("/calendar/sync")

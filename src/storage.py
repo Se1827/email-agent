@@ -385,7 +385,7 @@ def store_semantic_memory(
 
 def store_calendar_event(event: Any, *, source: str = "calendar") -> StoredRecord | None:
     payload = event.model_dump(mode="json") if hasattr(event, "model_dump") else dict(event)
-    record_id = _stable_hash(json.dumps(payload, sort_keys=True))
+    record_id = payload.get("id") or _stable_hash(json.dumps(payload, sort_keys=True))
     metadata = {
         "title_hash": _stable_hash(payload.get("title", "")),
         "attendee_count": len(payload.get("attendees", []) or []),
@@ -398,6 +398,42 @@ def store_calendar_event(event: Any, *, source: str = "calendar") -> StoredRecor
         occurred_at=payload.get("start"),
         metadata=metadata,
     )
+
+
+def load_calendar_events() -> list[dict[str, Any]]:
+    """Return decrypted saved calendar event payloads."""
+    if not storage_configured():
+        return []
+    _require_psycopg()
+
+    sql = """
+        SELECT ciphertext
+        FROM encrypted_records
+        WHERE record_type = 'calendar_event'
+        ORDER BY occurred_at ASC
+    """
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+    return [decrypt_payload(row[0], _encryption_key()) for row in rows]
+
+
+def delete_calendar_event_record(event_id: str) -> int:
+    """Delete a calendar event from storage by its ID."""
+    if not storage_configured():
+        return 0
+    _require_psycopg()
+
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM encrypted_records WHERE record_type = 'calendar_event' AND record_id = %s",
+                (event_id,)
+            )
+            deleted = cur.rowcount
+        conn.commit()
+    return deleted
 
 
 def record_event(
@@ -652,6 +688,10 @@ def safe_store_email(email: Any, *, source: str) -> None:
 
 def safe_store_calendar_event(event: Any, *, source: str = "calendar") -> None:
     _enqueue(store_calendar_event, event, source=source)
+
+
+def safe_delete_calendar_event_record(event_id: str) -> None:
+    _enqueue(delete_calendar_event_record, event_id)
 
 
 def safe_store_pii_mappings(email_id: str, purpose: str, mappings: list[Any]) -> None:
