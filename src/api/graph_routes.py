@@ -42,7 +42,60 @@ class TeamsNotifyRequest(BaseModel):
     message: str
 
 
-# ── Status ────────────────────────────────────────────────────────────────────
+# ── Config models ─────────────────────────────────────────────────────────────
+
+class GraphConfig(BaseModel):
+    graph_mock: bool
+    tenant_id: str
+    client_id: str
+    client_secret: str
+    user_email: str
+
+
+# ── Status and Config ─────────────────────────────────────────────────────────
+
+@router.get("/config")
+def graph_get_config() -> dict:
+    """Returns the current Microsoft Graph API configuration."""
+    from src.config import get_settings
+    import os
+    from dotenv import dotenv_values
+    env_vars = dotenv_values(get_settings().data_dir.parent / ".env")
+    return {
+        "graph_mock": env_vars.get("GRAPH_MOCK", "true").lower() == "true",
+        "tenant_id": env_vars.get("AZURE_TENANT_ID", ""),
+        "client_id": env_vars.get("AZURE_CLIENT_ID", ""),
+        "client_secret": env_vars.get("AZURE_CLIENT_SECRET", ""),
+        "user_email": env_vars.get("GRAPH_USER_EMAIL", ""),
+    }
+
+@router.post("/config")
+def graph_update_config(config: GraphConfig) -> dict:
+    """Updates the Microsoft Graph API configuration in .env."""
+    from src.config import get_settings
+    from dotenv import set_key
+    env_path = get_settings().data_dir.parent / ".env"
+    
+    # Ensure .env exists
+    if not env_path.exists():
+        env_path.touch()
+        
+    set_key(env_path, "GRAPH_MOCK", "true" if config.graph_mock else "false")
+    set_key(env_path, "AZURE_TENANT_ID", config.tenant_id)
+    set_key(env_path, "AZURE_CLIENT_ID", config.client_id)
+    set_key(env_path, "AZURE_CLIENT_SECRET", config.client_secret)
+    set_key(env_path, "GRAPH_USER_EMAIL", config.user_email)
+    
+    # Dynamically update the module variables in GraphConnector
+    import src.connectors.graph as graph_module
+    graph_module.IS_MOCK = config.graph_mock
+    graph_module.TENANT_ID = config.tenant_id
+    graph_module.CLIENT_ID = config.client_id
+    graph_module.CLIENT_SECRET = config.client_secret
+    graph_module.USER_EMAIL = config.user_email
+    
+    return {"status": "ok", "message": "Graph configuration updated."}
+
 
 @router.get("/status")
 def graph_status() -> dict:

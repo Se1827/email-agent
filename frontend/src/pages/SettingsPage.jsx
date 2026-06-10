@@ -10,6 +10,8 @@ import {
   fetchAccounts,
   fetchStorageStats,
   updateAccount,
+  fetchGraphConfig,
+  updateGraphConfig,
 } from '../api';
 import './SettingsPage.css';
 
@@ -42,14 +44,31 @@ function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [accountError, setAccountError] = useState(null);
 
+  // Graph config state
+  const [graphConfig, setGraphConfig] = useState(null);
+  const [editingGraph, setEditingGraph] = useState(false);
+  const [graphForm, setGraphForm] = useState({
+    graph_mock: true,
+    tenant_id: '',
+    client_id: '',
+    client_secret: '',
+    user_email: ''
+  });
+  const [savingGraph, setSavingGraph] = useState(false);
+
   const loadSettings = () => {
     setLoading(true);
     return Promise.all([
       fetchAccounts().catch(() => []),
       fetchStorageStats().catch(() => null),
-    ]).then(([acc, stor]) => {
+      fetchGraphConfig().catch(() => null),
+    ]).then(([acc, stor, graph]) => {
       setAccounts(acc);
       setStorage(stor);
+      if (graph) {
+        setGraphConfig(graph);
+        setGraphForm(graph);
+      }
       setLoading(false);
     });
   };
@@ -123,6 +142,20 @@ function SettingsPage() {
       setAccountError(err.message || 'Could not delete account.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveGraph = async (event) => {
+    event.preventDefault();
+    setSavingGraph(true);
+    try {
+      await updateGraphConfig(graphForm);
+      setGraphConfig(graphForm);
+      setEditingGraph(false);
+    } catch (err) {
+      alert(err.message || 'Could not save Graph config.');
+    } finally {
+      setSavingGraph(false);
     }
   };
 
@@ -365,9 +398,52 @@ function SettingsPage() {
               <div className="integration-row-name">Microsoft Graph API</div>
               <div className="integration-row-desc">Sync Outlook, Teams, and Calendar via OAuth2</div>
             </div>
-            <span className="settings-tag settings-tag-soon">Coming Soon</span>
+            {!editingGraph ? (
+              <button className="btn btn-secondary" onClick={() => setEditingGraph(true)}>
+                <Pencil size={14} /> Configure
+              </button>
+            ) : (
+              <button className="btn-icon" onClick={() => { setEditingGraph(false); setGraphForm(graphConfig); }}>
+                <X size={14} />
+              </button>
+            )}
           </div>
-          <div className="integration-row">
+          {editingGraph && (
+            <form className="account-editor" onSubmit={handleSaveGraph} style={{ marginTop: 16 }}>
+              <div className="account-form-grid">
+                <label className="checkbox-row" style={{ gridColumn: '1 / -1' }}>
+                  <input type="checkbox" checked={graphForm.graph_mock} onChange={(e) => setGraphForm(f => ({ ...f, graph_mock: e.target.checked }))} />
+                  <strong>Run in Mock Mode (No Azure credentials required)</strong>
+                </label>
+                {!graphForm.graph_mock && (
+                  <>
+                    <label>
+                      Tenant ID
+                      <input className="input" value={graphForm.tenant_id} onChange={(e) => setGraphForm(f => ({ ...f, tenant_id: e.target.value }))} required />
+                    </label>
+                    <label>
+                      Client ID
+                      <input className="input" value={graphForm.client_id} onChange={(e) => setGraphForm(f => ({ ...f, client_id: e.target.value }))} required />
+                    </label>
+                    <label>
+                      Client Secret
+                      <input className="input" type="password" value={graphForm.client_secret} onChange={(e) => setGraphForm(f => ({ ...f, client_secret: e.target.value }))} required />
+                    </label>
+                    <label>
+                      User Email (Graph User)
+                      <input className="input" type="email" value={graphForm.user_email} onChange={(e) => setGraphForm(f => ({ ...f, user_email: e.target.value }))} required />
+                    </label>
+                  </>
+                )}
+              </div>
+              <div className="account-editor-actions">
+                <button type="submit" className="btn btn-primary" disabled={savingGraph}>
+                  <Save size={14} /> {savingGraph ? 'Saving...' : 'Save Configuration'}
+                </button>
+              </div>
+            </form>
+          )}
+          <div className="integration-row" style={{ marginTop: editingGraph ? 16 : 0 }}>
             <div className="integration-row-icon" style={{ background: 'var(--gradient-success)' }}>
               <ExternalLink size={18} />
             </div>

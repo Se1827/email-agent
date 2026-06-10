@@ -33,6 +33,7 @@ data/accounts.json
 .coverage
 htmlcov/
 misc-visitors/
+.graph_token_cache.json
 
 # OS
 .DS_Store

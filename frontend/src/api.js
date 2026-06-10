@@ -159,3 +159,15 @@ export function fetchStorageStats() {
     return request('/storage/stats');
 }
 
+// ---- Graph API Configuration ----
+export function fetchGraphConfig() {
+    return request('/graph/config');
+}
+
+export function updateGraphConfig(data) {
+    return request('/graph/config', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+}
+
