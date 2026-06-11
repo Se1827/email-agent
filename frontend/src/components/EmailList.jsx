@@ -3,22 +3,50 @@ import { formatDate, formatSender, senderColor } from '../utils';
 import { toggleStar, fetchEmail } from '../api';
 import './EmailList.css';
 
+function normalizeSubject(subject) {
+    if (!subject) return "";
+    let s = subject.trim();
+    while (true) {
+        let prev = s;
+        s = s.replace(/^(re|fw|fwd)\s*:\s*/i, '').trim();
+        if (s === prev) break;
+    }
+    return s.toLowerCase();
+}
+
 /**
- * Group emails by thread_id so we show one row per conversation.
+ * Group emails by thread_id and normalized subject so we show one row per conversation.
  * Each group shows the latest message's preview and the count of messages.
  */
 function groupByThread(emails) {
-    const threads = new Map();
+    // First pass: Group by explicit thread_id
+    const tempGroups = new Map();
     for (const email of emails) {
         const tid = email.thread_id || email.id;
-        if (!threads.has(tid)) {
-            threads.set(tid, []);
+        if (!tempGroups.has(tid)) {
+            tempGroups.set(tid, []);
         }
-        threads.get(tid).push(email);
+        tempGroups.get(tid).push(email);
+    }
+
+    // Second pass: Unify groups by normalized subject
+    const subjectToGroup = new Map();
+    for (const [tid, groupEmails] of tempGroups) {
+        // Determine base subject from the earliest email in this group
+        const earliest = [...groupEmails].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0];
+        const baseSubj = normalizeSubject(earliest.subject);
+        
+        // Use a fallback key if subject is empty
+        const groupKey = baseSubj || tid;
+        
+        if (!subjectToGroup.has(groupKey)) {
+            subjectToGroup.set(groupKey, []);
+        }
+        subjectToGroup.get(groupKey).push(...groupEmails);
     }
 
     const groups = [];
-    for (const [tid, msgs] of threads) {
+    for (const [groupKey, msgs] of subjectToGroup) {
         // Sort by timestamp descending — latest first
         msgs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         const latest = msgs[0];
@@ -28,7 +56,7 @@ function groupByThread(emails) {
         const classified = msgs.find(m => m.classification);
 
         groups.push({
-            id: tid,
+            id: groupKey,
             latestEmail: latest,
             count: msgs.length,
             participants,

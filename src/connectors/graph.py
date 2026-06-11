@@ -275,7 +275,7 @@ class GraphConnector:
                 "$top": top,
                 "$orderby": "receivedDateTime desc",
                 "$select": (
-                    "id,subject,bodyPreview,body,from,toRecipients,"
+                    "id,internetMessageId,subject,bodyPreview,body,from,toRecipients,"
                     "receivedDateTime,isRead,importance,hasAttachments,conversationId"
                 ),
             },
@@ -297,7 +297,7 @@ class GraphConnector:
         params = {
             "$top": 100,
             "$select": (
-                "id,subject,bodyPreview,body,from,toRecipients,receivedDateTime," 
+                "id,internetMessageId,subject,bodyPreview,body,from,toRecipients,receivedDateTime," 
                 "isRead,importance,hasAttachments,conversationId"
             ),
         }
@@ -402,7 +402,7 @@ class GraphConnector:
             params={
                 "$filter": f"conversationId eq '{conversation_id}'",
                 "$select": (
-                    "id,subject,bodyPreview,body,from,toRecipients,"
+                    "id,internetMessageId,subject,bodyPreview,body,from,toRecipients,"
                     "receivedDateTime,isRead,importance,hasAttachments,conversationId"
                 ),
             },
@@ -417,7 +417,7 @@ class GraphConnector:
         return value
 
 
-    def send_message(self, to: str, subject: str, body_html: str, reply_to_id: str | None = None) -> dict:
+    def send_message(self, to: str | list[str], subject: str, body_html: str, reply_to_id: str | None = None, cc: list[str] | None = None) -> dict:
         if IS_MOCK:
             return {
                 "id": f"sent-{uuid.uuid4().hex[:8]}",
@@ -429,22 +429,29 @@ class GraphConnector:
             }
         import httpx
         import json as _json
+        
+        to_list = [to] if isinstance(to, str) else to
+        cc_list = cc or []
+        
         if reply_to_id:
-            url = f"{GRAPH_BASE}/me/mailFolders/inbox/messages/{reply_to_id}/reply"
-            payload = {"comment": body_html}
+            url = f"{GRAPH_BASE}/me/messages/{reply_to_id}/replyAll"
+            payload = {
+                "comment": body_html
+            }
         else:
             url = f"{GRAPH_BASE}/me/sendMail"
             payload = {
                 "message": {
                     "subject": subject,
                     "body": {"contentType": "html", "content": body_html},
-                    "toRecipients": [{"emailAddress": {"address": to}}],
+                    "toRecipients": [{"emailAddress": {"address": t}} for t in to_list if t],
+                    "ccRecipients": [{"emailAddress": {"address": c}} for c in cc_list if c],
                 },
                 "saveToSentItems": True,
             }
         resp = httpx.post(url, headers=_headers(), content=_json.dumps(payload), timeout=30)
         resp.raise_for_status()
-        return {"status": "sent", "to": to, "subject": subject}
+        return {"status": "sent", "to": to_list, "subject": subject}
 
     def list_attachments(self, msg_id: str) -> list[dict]:
         if IS_MOCK:
@@ -614,6 +621,7 @@ class GraphConnector:
             "snippet": m.get("bodyPreview", plain_body[:120]),
             "timestamp": m.get("receivedDateTime", ""),
             "thread_id": m.get("conversationId", ""),
+            "message_id": m.get("internetMessageId"),
             "is_read": m.get("isRead", True),
             "is_starred": False,
             "labels": m.get("categories", []),

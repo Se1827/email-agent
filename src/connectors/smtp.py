@@ -70,8 +70,8 @@ def send_email(
     cc_addrs = cc_addrs or []
 
     # Extract domain from sender address for Message-ID generation
-    domain = from_addr.split("@")[1] if "@" in from_addr else "emailagent.local"
-    msg_id = message_id or _generate_message_id(domain)
+    domain = from_addr.split("@")[-1] if "@" in from_addr else "emailagent.local"
+    msg_id = message_id or _generate_message_id(domain=domain)
 
     # Build MIME message
     msg = MIMEMultipart("alternative")
