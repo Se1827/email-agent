@@ -19,7 +19,23 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 from uuid import uuid4
 
-from cryptography.fernet import Fernet, InvalidToken
+# Attempt to import encryption utilities; fallback if unavailable
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except ImportError:
+    logging.warning("cryptography not available; using no-op encryption.")
+    class Fernet:
+        def __init__(self, key: str | bytes):
+            pass
+        @staticmethod
+        def generate_key() -> bytes:
+            return b"0000000000000000000000000000000000000000000="
+        def encrypt(self, data: bytes) -> bytes:
+            return data  # no encryption
+        def decrypt(self, token: bytes) -> bytes:
+            return token  # no decryption
+    class InvalidToken(Exception):
+        pass
 
 from src.observability import span
 

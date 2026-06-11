@@ -1,7 +1,58 @@
-import { Star, MessageSquare } from 'lucide-react';
-import { formatDate, formatSender, senderColor } from '../utils';
+import { Star, MessageSquare, Plane, Calendar, CheckCircle2, AlertTriangle, Mail, CreditCard, GitPullRequest, ClipboardList, ShieldAlert, Newspaper } from 'lucide-react';
+import { formatDate, formatSender, senderColor, detectScenario } from '../utils';
 import { toggleStar, fetchEmail } from '../api';
 import './EmailList.css';
+
+function EmailAvatar({ email }) {
+    const scenario = detectScenario(email);
+    const colors = {
+        flight:     { bg: 'rgba(14, 165, 233, 0.12)', fg: '#0ea5e9' },
+        meeting:    { bg: 'rgba(167, 139, 250, 0.12)', fg: '#a78bfa' },
+        goodnews:   { bg: 'rgba(16, 185, 129, 0.12)', fg: '#10b981' },
+        alert:      { bg: 'rgba(245, 158, 11, 0.12)',  fg: '#f59e0b' },
+        finance:    { bg: 'rgba(16, 185, 129, 0.12)',  fg: '#10b981' },
+        code:       { bg: 'rgba(129, 140, 248, 0.12)', fg: '#818cf8' },
+        task:       { bg: 'rgba(244, 63, 94, 0.12)',   fg: '#f43f5e' },
+        spam:       { bg: 'rgba(239, 68, 68, 0.12)',   fg: '#ef4444' },
+        newsletter: { bg: 'rgba(6, 182, 212, 0.12)',   fg: '#06b6d4' },
+        default:    { bg: 'rgba(99, 102, 241, 0.12)',  fg: '#6366f1' },
+    };
+
+    const config = colors[scenario] || colors.default;
+
+    const Icon = {
+        flight: Plane,
+        meeting: Calendar,
+        goodnews: CheckCircle2,
+        alert: AlertTriangle,
+        finance: CreditCard,
+        code: GitPullRequest,
+        task: ClipboardList,
+        spam: ShieldAlert,
+        newsletter: Newspaper,
+        default: Mail,
+    }[scenario] || Mail;
+
+    return (
+        <div 
+            className="email-avatar-icon" 
+            style={{ 
+                background: config.bg, 
+                color: config.fg, 
+                width: 36, 
+                height: 36, 
+                borderRadius: '50%', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                flexShrink: 0 
+            }}
+        >
+            <Icon size={16} />
+        </div>
+    );
+}
+
 
 /**
  * Group emails by thread_id so we show one row per conversation.
@@ -104,24 +155,33 @@ function EmailList({ emails, selected, onSelect, loading }) {
                         >
                             {/* Avatar */}
                             {group.count > 1 ? (
-                                <div className="email-avatar-stack">
-                                    {group.participants.slice(0, 2).map((p, i) => (
-                                        <div
-                                            key={p}
-                                            className="email-avatar email-avatar-stacked"
-                                            style={{
-                                                background: senderColor(p),
-                                                zIndex: 2 - i,
-                                            }}
-                                        >
-                                            {formatSender(p).charAt(0).toUpperCase()}
-                                        </div>
-                                    ))}
+                                <div className="email-avatar-stack" style={{ position: 'relative', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <EmailAvatar email={email} />
+                                    <span 
+                                        className="thread-count-indicator"
+                                        style={{
+                                            position: 'absolute',
+                                            bottom: -2,
+                                            right: -2,
+                                            background: 'var(--accent)',
+                                            color: '#fff',
+                                            fontSize: '9px',
+                                            fontWeight: 'bold',
+                                            borderRadius: '50%',
+                                            width: 14,
+                                            height: 14,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            border: '1.5px solid var(--bg-secondary)',
+                                            zIndex: 5
+                                        }}
+                                    >
+                                        {group.count}
+                                    </span>
                                 </div>
                             ) : (
-                                <div className="email-avatar" style={{ background: senderColor(email.sender) }}>
-                                    {formatSender(email.sender).charAt(0).toUpperCase()}
-                                </div>
+                                <EmailAvatar email={email} />
                             )}
 
                             <div className="email-row-content">
