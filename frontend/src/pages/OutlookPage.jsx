@@ -39,6 +39,14 @@ function Avatar({ name = '?', size = 36, color }) {
 }
 
 function StatusBadge({ mode }) {
+  if (mode === 'offline' || mode === 'error') {
+    return (
+      <span className="ol-status-badge" style={{ background: 'rgba(244, 63, 94, 0.1)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
+        <WifiOff size={10} />
+        {mode === 'error' ? 'Graph Error' : 'Disconnected'}
+      </span>
+    );
+  }
   const live = mode === 'live';
   return (
     <span className={`ol-status-badge ${live ? 'ol-status-live' : 'ol-status-mock'}`}>

@@ -100,16 +100,33 @@ def graph_update_config(config: GraphConfig) -> dict:
 @router.get("/status")
 def graph_status() -> dict:
     """Returns connector mode (mock / live) and config hints."""
-    from src.connectors.graph import USER_EMAIL
-    return {
-        "mode": "mock" if IS_MOCK else "live",
-        "user_email": USER_EMAIL,
-        "tip": (
-            "Running in mock mode — set GRAPH_MOCK=false + Azure creds in .env to go live."
-            if IS_MOCK
-            else "Connected to Microsoft Graph (live mode)."
-        ),
-    }
+    from src.connectors.graph import USER_EMAIL, IS_MOCK, _get_token, GraphAuthRequired
+    if IS_MOCK:
+        return {
+            "mode": "mock",
+            "user_email": USER_EMAIL,
+            "tip": "Running in mock mode — set GRAPH_MOCK=false + Azure creds in .env to go live.",
+        }
+    
+    try:
+        _get_token(auto_login=False)
+        return {
+            "mode": "live",
+            "user_email": USER_EMAIL,
+            "tip": "Connected to Microsoft Graph (live mode).",
+        }
+    except GraphAuthRequired:
+        return {
+            "mode": "offline",
+            "user_email": USER_EMAIL,
+            "tip": "Microsoft Graph is disconnected. Run `python src/connectors/graph.py --login` to reconnect.",
+        }
+    except Exception as e:
+        return {
+            "mode": "error",
+            "user_email": USER_EMAIL,
+            "tip": f"Error checking Graph status: {e}",
+        }
 
 
 # ── Mail endpoints ─────────────────────────────────────────────────────────────

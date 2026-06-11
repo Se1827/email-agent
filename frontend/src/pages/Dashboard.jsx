@@ -254,7 +254,14 @@ function Dashboard() {
                 </div>
                 <div>
                   <div className="integration-title">Microsoft Graph</div>
-                  <span className="integration-badge" style={{background: graphStatus?.mode === "live" ? "#22c55e22" : "#f9731622", color: graphStatus?.mode === "live" ? "#22c55e" : "#f97316"}}>{graphStatus?.mode === "live" ? "Live" : "Mock Mode"}</span>
+                  {graphStatus && (
+                    <span className="integration-badge" style={{
+                      background: graphStatus.mode === "live" ? "#22c55e22" : (graphStatus.mode === "offline" || graphStatus.mode === "error" ? "rgba(244, 63, 94, 0.1)" : "#f9731622"), 
+                      color: graphStatus.mode === "live" ? "#22c55e" : (graphStatus.mode === "offline" || graphStatus.mode === "error" ? "#f43f5e" : "#f97316")
+                    }}>
+                      {graphStatus.mode === "live" ? "Live" : (graphStatus.mode === "offline" ? "Disconnected" : (graphStatus.mode === "error" ? "Error" : "Mock Mode"))}
+                    </span>
+                  )}
                 </div>
               </div>
               <p className="integration-desc">

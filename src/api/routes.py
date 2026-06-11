@@ -319,7 +319,7 @@ def _ensure_loaded() -> None:
 
         if is_graph_active:
             try:
-                from src.connectors.graph import graph
+                from src.connectors.graph import graph, GraphAuthRequired
                 raw_events = graph.list_events(days_ahead=7)
                 for ev in raw_events:
                     try:
@@ -348,6 +348,8 @@ def _ensure_loaded() -> None:
                             safe_store_calendar_event(event, source="microsoft_graph")
                     except Exception as e:
                         log.exception("graph_calendar_parse_failed", extra={"event_id": ev.get("id"), "error": str(e)})
+            except GraphAuthRequired as exc:
+                log.warning("Graph sync skipped: Auth required.", extra={"error": str(exc)})
             except Exception as exc:
                 log.exception("graph_calendar_load_failed", extra={"error": str(exc)})
 
@@ -1358,7 +1360,7 @@ async def sync_calendar() -> dict[str, Any]:
     try:
         log.info("Starting calendar sync from Microsoft Graph...")
         print("--- STARTING CALENDAR SYNC FROM GRAPH ---")
-        from src.connectors.graph import graph
+        from src.connectors.graph import graph, GraphAuthRequired
         raw_events = graph.list_events(days_ahead=30)
         
         # Remove old graph events
@@ -1397,6 +1399,10 @@ async def sync_calendar() -> dict[str, Any]:
         log.info(f"Calendar sync complete: {count} events synced")
         print(f"--- CALENDAR SYNC COMPLETE: {count} events synced ---")
         return {"status": "synced", "count": count}
+    except GraphAuthRequired as exc:
+        log.warning("Calendar sync skipped: Graph auth required")
+        print("--- CALENDAR SYNC SKIPPED: Graph auth required ---")
+        return {"status": "skipped", "message": "Graph is disconnected"}
     except Exception as exc:
         log.error(f"Calendar sync failed: {exc}")
         print(f"--- CALENDAR SYNC FAILED: {exc} ---")

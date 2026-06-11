@@ -1,6 +1,6 @@
 """
 src/connectors/graph.py
-Microsoft Graph connector – sits alongside imap.py and mock.py.
+Microsoft Graph connector â€“ sits alongside imap.py and mock.py.
 
 MOCK MODE  (default, GRAPH_MOCK=true): works right now, zero Azure needed.
 LIVE MODE:  set GRAPH_MOCK=false + fill Azure creds in .env.
@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import shutil
 
-# ── Configuration ──────────────────────────────────────────────────────────────
+# â”€â”€ Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 IS_MOCK       = os.getenv("GRAPH_MOCK", "true").lower() == "true"
 TENANT_ID     = os.getenv("AZURE_TENANT_ID",     "mock-tenant")
 CLIENT_ID     = os.getenv("AZURE_CLIENT_ID",     "mock-client")
@@ -35,8 +35,11 @@ SCOPES = [
     "offline_access",
 ]
 
+class GraphAuthRequired(Exception):
+    pass
 
-# ── Mock data ──────────────────────────────────────────────────────────────────
+
+# â”€â”€ Mock data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _now = datetime.now(timezone.utc)
 
 _MOCK_MESSAGES = [
@@ -59,7 +62,7 @@ _MOCK_MESSAGES = [
     },
     {
         "id": "graph-msg-002",
-        "subject": "Q3 Review – Action Required",
+        "subject": "Q3 Review â€“ Action Required",
         "bodyPreview": "Please review deck and share inputs by Friday EOW.",
         "body": {
             "contentType": "html",
@@ -159,7 +162,6 @@ def _refresh_token(token_data: dict) -> dict:
         data={
             "grant_type": "refresh_token",
             "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
             "refresh_token": token_data["refresh_token"],
             "scope": " ".join(SCOPES),
         },
@@ -212,7 +214,6 @@ def _device_code_login() -> dict:
                     data={
                         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                         "client_id": CLIENT_ID,
-                        "client_secret": CLIENT_SECRET,
                         "device_code": device_data["device_code"],
                     },
                 )
@@ -233,26 +234,32 @@ def _device_code_login() -> dict:
     raise Exception("Login timed out. Please restart and try again.")
 
 
-def _get_token() -> str:
+def _get_token(auto_login: bool = False) -> str:
     """Get a valid access token, using cache / refresh / device code as needed."""
     token_data = _load_cached_token()
 
     if token_data is None:
-        token_data = _device_code_login()
+        if auto_login:
+            token_data = _device_code_login()
+        else:
+            raise GraphAuthRequired("Microsoft Graph is not authenticated. Please log in.")
     elif _is_token_expired(token_data):
         try:
             token_data = _refresh_token(token_data)
         except Exception:
-            token_data = _device_code_login()
+            if auto_login:
+                token_data = _device_code_login()
+            else:
+                raise GraphAuthRequired("Microsoft Graph token expired and refresh failed. Please log in.")
 
     return token_data["access_token"]
 
 
 def _headers() -> dict:
-    return {"Authorization": f"Bearer {_get_token()}", "Content-Type": "application/json"}
+    return {"Authorization": f"Bearer {_get_token(auto_login=False)}", "Content-Type": "application/json"}
 
 
-# ── GraphConnector class ───────────────────────────────────────────────────────
+# â”€â”€ GraphConnector class â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class GraphConnector:
     """Microsoft Graph connector. Same pattern as imap.py / mock.py."""
@@ -508,7 +515,7 @@ class GraphConnector:
         deadline = datetime.fromisoformat(deadline_iso)
         conflicts = self.detect_conflicts(deadline_iso)
         event = self.create_event(
-            subject=f"Deadline – {msg_id}",
+            subject=f"Deadline â€“ {msg_id}",
             start_iso=(deadline - timedelta(hours=1)).isoformat(),
             end_iso=deadline_iso,
             body="Auto-created by Pluemail agent based on detected email deadline.",
@@ -624,12 +631,17 @@ graph = GraphConnector()
 
 
 if __name__ == "__main__":
-    print("Running smoke test...\n")
-    msgs = graph.list_messages()
-    print(f"Emails ({len(msgs)}):")
-    for m in msgs:
-        c = graph.to_agent_email(m)
-        print(f"  [{c['importance'].upper()}] {c['subject']} -- from {c['sender']}")
-    print("\nTest passed")
-
-
+    import sys
+    if "--login" in sys.argv:
+        print("Initiating manual Microsoft Graph login...")
+        _device_code_login()
+    else:
+        print("Running smoke test...\n")
+        # For the smoke test to work if not logged in, we must force auto_login
+        _get_token(auto_login=True)
+        msgs = graph.list_messages()
+        print(f"Emails ({len(msgs)}):")
+        for m in msgs:
+            c = graph.to_agent_email(m)
+            print(f"  [{c['importance'].upper()}] {c['subject']} -- from {c['sender']}")
+        print("\nTest passed")
