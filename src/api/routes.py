@@ -595,6 +595,25 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
         if e.id not in thread_emails and (e.thread_id or e.id) == anchor_thread:
             thread_emails[e.id] = e
 
+    # Subject-based grouping fallback (mirrors frontend logic)
+    def _normalize_subject(subject: str) -> str:
+        if not subject:
+            return ""
+        import re
+        s = subject.strip()
+        while True:
+            prev = s
+            s = re.sub(r'(?i)^(re|fw|fwd)\s*:\s*', '', s).strip()
+            if s == prev:
+                break
+        return s.lower()
+        
+    base_subj = _normalize_subject(anchor.subject)
+    if base_subj:
+        for e in _emails.values():
+            if e.id not in thread_emails and _normalize_subject(e.subject) == base_subj:
+                thread_emails[e.id] = e
+
     thread = [e.model_dump(mode="json") for e in thread_emails.values()]
     thread.sort(key=lambda e: e.get("timestamp", ""))
     return thread
@@ -741,29 +760,6 @@ async def approve_draft(email_id: str) -> dict[str, Any]:
     )
     _log_activity("approved", f"Draft reply approved for '{email.subject[:40]}'", email.id)
     
-    # If the provider is graph, send the email live!
-    cfg = get_settings()
-    accounts = load_accounts(cfg.data_dir)
-    account = next((a for a in accounts if a.id == email.account_id), None)
-    if account and account.provider == "graph":
-        try:
-            from src.connectors.graph import graph
-            raw_msg_id = email.id.split(":", 1)[1] if ":" in email.id else email.id
-            # Send reply
-            graph.send_message(
-                to=email.sender,
-                subject=f"Re: {email.subject}",
-                body_html=email.draft_reply.body,
-                reply_to_id=raw_msg_id
-            )
-            _log_activity("sent", f"Reply sent to {email.sender} via Microsoft Graph", email.id)
-        except Exception as exc:
-            log.exception("graph_send_failed", extra={"email_id": email.id})
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to send email via Microsoft Graph: {exc}",
-            )
-            
     email.draft_reply = None
     email.is_read = True
     _persist_email_state(email)
@@ -817,16 +813,8 @@ def _do_send_reply(
     cfg = get_settings()
     account = _resolve_email_account(original)
 
-    smtp_settings = resolve_smtp_settings(account)
-
-    # Build threading headers
-    reply_to_msg_id = original.message_id
-    refs = list(original.references)
-    if original.message_id and original.message_id not in refs:
-        refs.append(original.message_id)
-
     # Default recipients: reply to sender + original To (excluding ourselves)
-    from_addr = smtp_settings["from_addr"]
+    from_addr = resolve_smtp_settings(account)["from_addr"] if account.provider != "graph" else account.email
     if to_addrs is None:
         all_addrs = [original.sender] + original.recipients
         to_addrs = [a for a in dict.fromkeys(all_addrs) if a.lower() != from_addr.lower()]
@@ -836,22 +824,53 @@ def _do_send_reply(
     from src.connectors.smtp import _normalize_subject_for_reply
     reply_subject = _normalize_subject_for_reply(original.subject)
 
-    sent_msg_id = smtp_send_email(
-        host=smtp_settings["host"],
-        port=smtp_settings["port"],
-        username=smtp_settings["username"],
-        password=smtp_settings["password"],
-        use_ssl=smtp_settings["use_ssl"],
-        use_tls=smtp_settings["use_tls"],
-        from_addr=from_addr,
-        from_name=smtp_settings["from_name"],
-        to_addrs=to_addrs,
-        cc_addrs=cc_addrs,
-        subject=reply_subject,
-        body=body,
-        in_reply_to=reply_to_msg_id,
-        references=refs,
-    )
+    now = datetime.now(timezone.utc)
+    
+    def _ensure_brackets(val: str) -> str:
+        val = val.strip()
+        if not val.startswith("<"):
+            val = "<" + val
+        if not val.endswith(">"):
+            val = val + ">"
+        return val
+
+    reply_to_msg_id = _ensure_brackets(original.message_id) if original.message_id else None
+    refs = [_ensure_brackets(r) for r in original.references if r]
+    if reply_to_msg_id and reply_to_msg_id not in refs:
+        refs.append(reply_to_msg_id)
+    
+    if account.provider == "graph":
+        from src.connectors.graph import graph
+        raw_msg_id = original.id.split(":", 1)[1] if ":" in original.id else original.id
+        graph.send_message(
+            to=to_addrs,
+            cc=cc_addrs,
+            subject=reply_subject,
+            body_html=body,
+            reply_to_id=raw_msg_id
+        )
+        # Graph handles threading. We create a local sent email to show immediately.
+        sent_msg_id = f"graph-sent-{uuid4().hex[:12]}"
+    else:
+        smtp_settings = resolve_smtp_settings(account)
+        from_addr = smtp_settings["from_addr"]
+
+        sent_msg_id = smtp_send_email(
+            host=smtp_settings["host"],
+            port=smtp_settings["port"],
+            username=smtp_settings["username"],
+            password=smtp_settings["password"],
+            use_ssl=smtp_settings["use_ssl"],
+            use_tls=smtp_settings["use_tls"],
+            from_addr=from_addr,
+            from_name=smtp_settings["from_name"],
+            to_addrs=to_addrs,
+            cc_addrs=cc_addrs,
+            subject=reply_subject,
+            body=body,
+            in_reply_to=reply_to_msg_id,
+            references=refs,
+        )
 
     # Create a sent Email record
     now = datetime.now(timezone.utc)
@@ -930,30 +949,44 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
     if account is None:
         raise HTTPException(status_code=404, detail=f"Account {body.account_id} not found")
 
-    try:
-        smtp_settings = resolve_smtp_settings(account)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if account.provider == "graph":
+        from src.connectors.graph import graph
+        from_addr = account.email
+        try:
+            graph.send_message(
+                to=body.to,
+                cc=body.cc or [],
+                subject=body.subject,
+                body_html=body.body
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        sent_msg_id = f"graph-sent-{uuid4().hex[:12]}"
+    else:
+        try:
+            smtp_settings = resolve_smtp_settings(account)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    from_addr = smtp_settings["from_addr"]
+        from_addr = smtp_settings["from_addr"]
 
-    try:
-        sent_msg_id = smtp_send_email(
-            host=smtp_settings["host"],
-            port=smtp_settings["port"],
-            username=smtp_settings["username"],
-            password=smtp_settings["password"],
-            use_ssl=smtp_settings["use_ssl"],
-            use_tls=smtp_settings["use_tls"],
-            from_addr=from_addr,
-            from_name=smtp_settings["from_name"],
-            to_addrs=body.to,
-            cc_addrs=body.cc or [],
-            subject=body.subject,
-            body=body.body,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        try:
+            sent_msg_id = smtp_send_email(
+                host=smtp_settings["host"],
+                port=smtp_settings["port"],
+                username=smtp_settings["username"],
+                password=smtp_settings["password"],
+                use_ssl=smtp_settings["use_ssl"],
+                use_tls=smtp_settings["use_tls"],
+                from_addr=from_addr,
+                from_name=smtp_settings["from_name"],
+                to_addrs=body.to,
+                cc_addrs=body.cc or [],
+                subject=body.subject,
+                body=body.body,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     now = datetime.now(timezone.utc)
     sent_email = Email(
@@ -966,7 +999,7 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
         subject=body.subject,
         body=body.body,
         timestamp=now,
-        thread_id=sent_msg_id,
+        thread_id=f"{account.id}:{sent_msg_id}",
         message_id=sent_msg_id,
         is_sent=True,
         is_read=True,
