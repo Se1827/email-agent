@@ -4,8 +4,11 @@ import {
   MessageSquare, RefreshCw, Send, Plus, ChevronRight,
   Paperclip, Clock, CheckCircle2, AlertCircle, Wifi,
   WifiOff, MoreHorizontal, Search, X, Loader2, Sparkles,
-  Tag, FileText, Zap, CalendarPlus
+  Tag, FileText, Zap, CalendarPlus, Plane, AlertTriangle,
+  CreditCard, GitPullRequest, ClipboardList, ShieldAlert, Newspaper
 } from 'lucide-react';
+import { ScenarioStrip } from '../components/SmartCard';
+import { detectScenario } from '../utils';
 import './OutlookPage.css';
 
 const API = '/api/graph';
@@ -34,6 +37,56 @@ function Avatar({ name = '?', size = 36, color }) {
   return (
     <div className="ol-avatar" style={{ width: size, height: size, background: bg, fontSize: size * 0.38 }}>
       {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
+function EmailAvatar({ email, size = 34 }) {
+  const scenario = detectScenario(email);
+  const colors = {
+    flight:     { bg: 'rgba(14, 165, 233, 0.12)', fg: '#0ea5e9' },
+    meeting:    { bg: 'rgba(167, 139, 250, 0.12)', fg: '#a78bfa' },
+    goodnews:   { bg: 'rgba(16, 185, 129, 0.12)', fg: '#10b981' },
+    alert:      { bg: 'rgba(245, 158, 11, 0.12)',  fg: '#f59e0b' },
+    finance:    { bg: 'rgba(16, 185, 129, 0.12)',  fg: '#10b981' },
+    code:       { bg: 'rgba(129, 140, 248, 0.12)', fg: '#818cf8' },
+    task:       { bg: 'rgba(244, 63, 94, 0.12)',   fg: '#f43f5e' },
+    spam:       { bg: 'rgba(239, 68, 68, 0.12)',   fg: '#ef4444' },
+    newsletter: { bg: 'rgba(6, 182, 212, 0.12)',   fg: '#06b6d4' },
+    default:    { bg: 'rgba(99, 102, 241, 0.12)',  fg: '#6366f1' },
+  };
+
+  const config = colors[scenario] || colors.default;
+
+  const Icon = {
+    flight: Plane,
+    meeting: Calendar,
+    goodnews: CheckCircle2,
+    alert: AlertTriangle,
+    finance: CreditCard,
+    code: GitPullRequest,
+    task: ClipboardList,
+    spam: ShieldAlert,
+    newsletter: Newspaper,
+    default: Mail,
+  }[scenario] || Mail;
+
+  return (
+    <div 
+      className="ol-avatar ol-avatar-icon" 
+      style={{ 
+        background: config.bg, 
+        color: config.fg, 
+        width: size, 
+        height: size, 
+        borderRadius: '50%', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        flexShrink: 0 
+      }}
+    >
+      <Icon size={size * 0.45} />
     </div>
   );
 }
@@ -284,7 +337,7 @@ function MailTab() {
               className={`ol-mail-item ${!m.is_read ? 'ol-unread' : ''} ${selected?.id === m.id ? 'ol-selected' : ''}`}
               onClick={() => setSelected(m)}
             >
-              <Avatar name={m.sender || '?'} size={34} />
+              <EmailAvatar email={m} size={34} />
               <div className="ol-mail-item-body">
                 <div className="ol-mail-item-from">{(m.sender || '').split('@')[0]}</div>
                 <div className="ol-mail-item-subject">{m.subject}</div>
@@ -336,6 +389,7 @@ function MailTab() {
         ) : selected ? (
           <div className="ol-mail-reader">
             <h2 className="ol-mail-subject">{selected.subject}</h2>
+            <ScenarioStrip email={selected} />
             <div className="ol-mail-from-row">
               <Avatar name={selected.sender || '?'} size={36} />
               <div>

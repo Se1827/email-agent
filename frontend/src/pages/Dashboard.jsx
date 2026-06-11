@@ -4,9 +4,12 @@ import {
   Mail, MailWarning, CheckCircle2, Star,
   AlertTriangle, Bell, Clock, CalendarDays,
   ArrowRight, Sparkles, Link2, ShieldCheck,
-  TrendingUp, Zap, X
+  TrendingUp, Zap, X, ExternalLink, Eye,
+  Plane, CreditCard, GitPullRequest, ClipboardList,
+  ShieldAlert, Newspaper, Users, Activity
 } from 'lucide-react';
 import { fetchDashboard, dismissNotification } from '../api';
+import { SmartCard } from '../components/SmartCard';
 import './Dashboard.css';
 
 const PRIORITY_COLORS = {
@@ -22,18 +25,75 @@ const SEVERITY_ICONS = {
   info: Sparkles,
 };
 
+/* ── Rich Notification Card ─────────────────────────────────────────────── */
+function NotificationCard({ n, onDismiss, onNavigate }) {
+  const SevIcon = SEVERITY_ICONS[n.severity] || Bell;
+
+  const iconClass = {
+    critical: 'notif-card-icon--critical',
+    warning:  'notif-card-icon--warning',
+    info:     'notif-card-icon--info',
+  }[n.severity] || 'notif-card-icon--info';
+
+  const cardClass = {
+    critical: 'notification-card-rich--critical',
+    warning:  'notification-card-rich--warning',
+    info:     'notification-card-rich--info',
+  }[n.severity] || 'notification-card-rich--info';
+
+  const primaryBtnClass = {
+    critical: 'notif-action-btn--critical',
+    warning:  'notif-action-btn--warn',
+    info:     'notif-action-btn--primary',
+  }[n.severity] || 'notif-action-btn--primary';
+
+  const actionLabel = n.related_type === 'email'
+    ? 'View Email'
+    : n.related_type === 'event'
+    ? 'View Event'
+    : 'View Details';
+
+  return (
+    <div className={`notification-card-rich ${cardClass}`} onClick={onNavigate}>
+      <div className="notif-card-header">
+        <div className={`notif-card-icon ${iconClass}`}>
+          <SevIcon size={18} />
+        </div>
+        <div className="notif-card-body">
+          <div className="notif-card-title">{n.title}</div>
+          <div className="notif-card-message">{n.message}</div>
+        </div>
+        <button
+          className="notif-card-dismiss"
+          onClick={(e) => { e.stopPropagation(); onDismiss(n.id); }}
+        >
+          <X size={13} />
+        </button>
+      </div>
+      <div className="notif-card-actions">
+        <button className={`notif-action-btn ${primaryBtnClass}`} onClick={onNavigate}>
+          <Eye size={11} /> {actionLabel} →
+        </button>
+        <button
+          className="notif-action-btn notif-action-btn--ghost"
+          onClick={(e) => { e.stopPropagation(); onDismiss(n.id); }}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard() {
   const [data, setData] = useState(null);
   const [graphStatus, setGraphStatus] = useState(null);
-  const [graphLoading, setGraphLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetch("/api/graph/status").then(r => r.json()).then(j => setGraphStatus(j)).catch(() => {});
   }, []);
-
-  const [loading, setLoading] = useState(true);
-
-  const navigate = useNavigate();
 
   useEffect(() => {
     loadDashboard();
@@ -128,38 +188,42 @@ function Dashboard() {
       <div className="dashboard-body">
         {/* ---- Left Column ---- */}
         <div className="dashboard-col-main">
-          {/* Notifications */}
+
+          {/* AI Alerts — Rich Cards */}
           {data.notifications.length > 0 && (
             <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.1s'}}>
-              <h2 className="section-heading"><Zap size={13} /> AI Alerts & Notifications</h2>
+              <h2 className="section-heading"><Zap size={13} /> AI Alerts &amp; Notifications</h2>
               <div className="notification-list">
-                {data.notifications.map((n) => {
-                  const SevIcon = SEVERITY_ICONS[n.severity] || Bell;
-                  return (
-                    <div
-                      key={n.id}
-                      className={`notification-card notification-${n.severity}`}
-                      onClick={() => {
-                        if (n.related_type === 'email') navigate('/inbox');
-                        else if (n.related_type === 'event') navigate('/calendar');
-                      }}
-                    >
-                      <div className={`notification-icon notification-icon-${n.severity}`}>
-                        <SevIcon size={16} />
-                      </div>
-                      <div className="notification-content">
-                        <div className="notification-title">{n.title}</div>
-                        <div className="notification-message">{n.message}</div>
-                      </div>
-                      <button
-                        className="btn-icon notification-dismiss"
-                        onClick={(e) => { e.stopPropagation(); handleDismiss(n.id); }}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
+                {data.notifications.map((n) => (
+                  <NotificationCard
+                    key={n.id}
+                    n={n}
+                    onDismiss={handleDismiss}
+                    onNavigate={() => {
+                      if (n.related_type === 'email') navigate('/inbox');
+                      else if (n.related_type === 'event') navigate('/calendar');
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* AI Priority Deck — Smart Cards */}
+          {data.recent_emails && data.recent_emails.length > 0 && (
+            <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.12s'}}>
+              <div className="section-heading-row">
+                <h2 className="section-heading"><Sparkles size={13} /> Intelligent Priority Deck</h2>
+                <button className="btn-link" onClick={() => navigate('/inbox')}>View all →</button>
+              </div>
+              <div className="smart-cards-list">
+                {data.recent_emails.slice(0, 6).map(email => (
+                  <SmartCard
+                    key={email.id}
+                    email={email}
+                    onNavigate={() => navigate('/inbox')}
+                  />
+                ))}
               </div>
             </section>
           )}
@@ -247,27 +311,64 @@ function Dashboard() {
 
           {/* Microsoft Graph Integration */}
           <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.2s'}}>
-            <div className="integration-card glass-card">
-              <div className="integration-header">
-                <div className="integration-icon">
-                  <Link2 size={20} />
+            <div className="ms-graph-card glass-card">
+              <div className="ms-graph-header">
+                {/* Microsoft logo squares */}
+                <div className="ms-logo">
+                  <div className="ms-logo-grid">
+                    <div style={{background:'#f25022'}} />
+                    <div style={{background:'#7fba00'}} />
+                    <div style={{background:'#00a4ef'}} />
+                    <div style={{background:'#ffb900'}} />
+                  </div>
                 </div>
                 <div>
-                  <div className="integration-title">Microsoft Graph</div>
-                  <span className="integration-badge" style={{background: graphStatus?.mode === "live" ? "#22c55e22" : "#f9731622", color: graphStatus?.mode === "live" ? "#22c55e" : "#f97316"}}>{graphStatus?.mode === "live" ? "Live" : "Mock Mode"}</span>
+                  <div className="ms-graph-title">Microsoft Graph</div>
+                  <span
+                    className="ms-graph-badge"
+                    style={{
+                      background: graphStatus?.mode === 'live' ? 'rgba(34,197,94,0.15)' : 'rgba(249,115,22,0.15)',
+                      color: graphStatus?.mode === 'live' ? '#4ade80' : '#fb923c',
+                    }}
+                  >
+                    {graphStatus?.mode === 'live' ? '● Live' : '○ Mock Mode'}
+                  </span>
                 </div>
               </div>
-              <p className="integration-desc">
-                {graphStatus?.user_email && graphStatus.user_email !== "Unknown"
-                  ? `Connected as ${graphStatus.user_email}` 
-                  : 'Connect Microsoft Graph to sync Outlook emails, Teams notifications, and SharePoint documents.'}
+
+              <p className="ms-graph-desc">
+                {graphStatus?.user_email && graphStatus.user_email !== 'Unknown'
+                  ? `Connected as ${graphStatus.user_email}`
+                  : 'Connect your Microsoft account to sync Outlook emails, Teams alerts, and calendar events in real-time.'}
               </p>
-              <div className="integration-features">
-                <div className="integration-feature"><ShieldCheck size={13} /> Outlook Sync</div>
-                <div className="integration-feature"><Bell size={13} /> Teams Alerts</div>
-                <div className="integration-feature"><CalendarDays size={13} /> Calendar Sync</div>
+
+              <div className="ms-graph-features">
+                <div className="ms-graph-feature">
+                  <div className="ms-feature-icon" style={{background:'rgba(0,164,239,0.15)',color:'#38bdf8'}}><Mail size={13}/></div>
+                  <span>Outlook Mail Sync</span>
+                </div>
+                <div className="ms-graph-feature">
+                  <div className="ms-feature-icon" style={{background:'rgba(91,33,182,0.15)',color:'#a78bfa'}}><Users size={13}/></div>
+                  <span>Teams Notifications</span>
+                </div>
+                <div className="ms-graph-feature">
+                  <div className="ms-feature-icon" style={{background:'rgba(16,185,129,0.15)',color:'#34d399'}}><CalendarDays size={13}/></div>
+                  <span>Calendar Events</span>
+                </div>
+                <div className="ms-graph-feature">
+                  <div className="ms-feature-icon" style={{background:'rgba(245,158,11,0.15)',color:'#fbbf24'}}><Activity size={13}/></div>
+                  <span>Activity Feed</span>
+                </div>
               </div>
-              <button className="btn btn-secondary" onClick={() => navigate('/settings')} style={{width: "100%", marginTop: 12}}>Manage Connection</button>
+
+              <div style={{display:'flex', gap:8, marginTop:4}}>
+                <button className="btn btn-secondary" onClick={() => navigate('/outlook')} style={{flex:1}}>
+                  <ExternalLink size={13}/> Open Graph
+                </button>
+                <button className="btn btn-primary" onClick={() => navigate('/settings')} style={{flex:1}}>
+                  <ShieldCheck size={13}/> Connect
+                </button>
+              </div>
             </div>
           </section>
 
@@ -298,5 +399,3 @@ function Dashboard() {
 }
 
 export default Dashboard;
-
-

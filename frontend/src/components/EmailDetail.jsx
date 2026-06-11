@@ -8,6 +8,7 @@ import {
   markAsRead, fetchThread, sendReply
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
+import { ScenarioStrip } from './SmartCard';
 import './EmailDetail.css';
 
 const QUALITY_OPTIONS = [
@@ -226,6 +227,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
             {/* Thread Header */}
             <div className="detail-header">
                 <h2 className="detail-subject">{email.subject}</h2>
+                <ScenarioStrip email={email} />
                 <div className="thread-info-row">
                     {hasThread && (
                         <div className="thread-count-badge">

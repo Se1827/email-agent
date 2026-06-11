@@ -163,18 +163,30 @@
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .ol-mail-item {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: all var(--transition-fast);
 }
-.ol-mail-item:hover { background: var(--bg-hover); }
-.ol-mail-item.ol-selected { background: var(--bg-selected); }
+.ol-mail-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.ol-mail-item.ol-selected {
+  background: var(--bg-selected);
+  border-color: var(--accent);
+}
 .ol-mail-item-body { flex: 1; min-width: 0; }
 .ol-mail-item-from {
   font-size: 12px;

@@ -1093,7 +1093,21 @@ async def get_dashboard() -> dict[str, Any]:
         recent_activity=_activity_log[:8],
         storage_stats=storage_stats(),
     )
-    return stats.model_dump(mode="json")
+    result = stats.model_dump(mode="json")
+    # Add recent emails for frontend smart card detection (subject + body + sender only)
+    sorted_emails = sorted(emails, key=lambda e: e.timestamp or "", reverse=True)
+    result["recent_emails"] = [
+        {
+            "id": e.id,
+            "subject": e.subject,
+            "sender": e.sender,
+            "body": (e.body or "")[:500],
+            "timestamp": e.timestamp,
+        }
+        for e in sorted_emails[:10]
+    ]
+    return result
+
 
 
 @router.get("/notifications")
