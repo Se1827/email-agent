@@ -189,19 +189,29 @@ function Dashboard() {
         {/* ---- Left Column ---- */}
         <div className="dashboard-col-main">
 
-          {/* AI Alerts — Rich Cards */}
+          {/* AI Alerts — Rich Cards (max 3 shown) */}
           {data.notifications.length > 0 && (
             <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.1s'}}>
-              <h2 className="section-heading"><Zap size={13} /> AI Alerts &amp; Notifications</h2>
+              <div className="section-heading-row">
+                <h2 className="section-heading"><Zap size={13} /> AI Alerts &amp; Notifications</h2>
+                {data.notifications.length > 3 && (
+                  <span className="section-count-badge">{data.notifications.length} total</span>
+                )}
+              </div>
               <div className="notification-list">
-                {data.notifications.map((n) => (
+                {data.notifications.slice(0, 3).map((n) => (
                   <NotificationCard
                     key={n.id}
                     n={n}
                     onDismiss={handleDismiss}
                     onNavigate={() => {
-                      if (n.related_type === 'email') navigate('/inbox');
-                      else if (n.related_type === 'event') navigate('/calendar');
+                      if (n.related_type === 'email' && n.related_id) {
+                        navigate(`/inbox?email=${n.related_id}`);
+                      } else if (n.related_type === 'email') {
+                        navigate('/inbox');
+                      } else if (n.related_type === 'event') {
+                        navigate('/calendar');
+                      }
                     }}
                   />
                 ))}
@@ -209,19 +219,19 @@ function Dashboard() {
             </section>
           )}
 
-          {/* AI Priority Deck — Smart Cards */}
+          {/* AI Priority Deck — Smart Cards (max 4 shown) */}
           {data.recent_emails && data.recent_emails.length > 0 && (
             <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.12s'}}>
               <div className="section-heading-row">
                 <h2 className="section-heading"><Sparkles size={13} /> Intelligent Priority Deck</h2>
-                <button className="btn-link" onClick={() => navigate('/inbox')}>View all →</button>
+                <button className="btn-link" onClick={() => navigate('/inbox')}>View all <ArrowRight size={12} /></button>
               </div>
               <div className="smart-cards-list">
-                {data.recent_emails.slice(0, 6).map(email => (
+                {data.recent_emails.slice(0, 4).map(email => (
                   <SmartCard
                     key={email.id}
                     email={email}
-                    onNavigate={() => navigate('/inbox')}
+                    onNavigate={() => navigate(`/inbox?email=${email.id}`)}
                   />
                 ))}
               </div>
@@ -331,7 +341,7 @@ function Dashboard() {
                       color: graphStatus?.mode === 'live' ? '#4ade80' : '#fb923c',
                     }}
                   >
-                    {graphStatus?.mode === 'live' ? '● Live' : '○ Mock Mode'}
+                    {graphStatus?.mode === 'live' ? 'Live' : 'Mock Mode'}
                   </span>
                 </div>
               </div>

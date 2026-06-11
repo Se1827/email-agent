@@ -87,5 +87,27 @@
         "body": "Hey,\n\nCould you review my PR for the auth-service refactor? It is a fairly contained change — just swapping the JWT library and updating the middleware.\n\nPR link: https://github.com/company/auth-service/pull/312\n\nNo rush, but would be great to get it merged before the Wednesday sprint.\n\nCheers,\nDeepak",
         "timestamp": "2026-05-07T11:30:00+05:30",
         "thread_id": "t005"
+    },
+    {
+        "id": "e009",
+        "sender": "security@alert-verify-account.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "URGENT: Verify your bank credentials immediately",
+        "body": "Dear Customer,\n\nWe detected unauthorized access attempts to your account. Please click the link below to verify your identity and prevent suspension:\n\nhttp://malicious-phishing-site.com/login?token=urgent\n\nThank you,\nSecurity Team",
+        "timestamp": "2026-06-11T20:15:00+05:30",
+        "thread_id": null
+    },
+    {
+        "id": "e010",
+        "sender": "developer.alex@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Refactor database migrations for user schema",
+        "body": "Hey,\n\nI created a PR to refactor our DB migrations. Can you review it?\n\nPR link: https://github.com/company/database/pull/501\n\nThanks,\nAlex",
+        "timestamp": "2026-06-11T20:20:00+05:30",
+        "thread_id": "t006"
     }
 ]

@@ -1,4 +1,4 @@
-import { Star, MessageSquare, Plane, Calendar, CheckCircle2, AlertTriangle, Mail, CreditCard, GitPullRequest, ClipboardList, ShieldAlert, Newspaper } from 'lucide-react';
+import { Star, MessageSquare, Plane, Calendar, CheckCircle2, AlertTriangle, Mail, CreditCard, GitPullRequest, ClipboardList, ShieldAlert, Newspaper, CornerUpLeft } from 'lucide-react';
 import { formatDate, formatSender, senderColor, detectScenario } from '../utils';
 import { toggleStar, fetchEmail } from '../api';
 import './EmailList.css';
@@ -205,7 +205,7 @@ function EmailList({ emails, selected, onSelect, loading }) {
                                 </div>
                                 <div className="email-subject">
                                     {email.subject}
-                                    {group.hasSent && <span className="sent-indicator">↩</span>}
+                                    {group.hasSent && <span className="sent-indicator"><CornerUpLeft size={10} /></span>}
                                 </div>
                                 <div className="email-row-bottom">
                                     <span className="email-snippet">

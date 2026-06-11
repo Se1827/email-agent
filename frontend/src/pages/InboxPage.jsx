@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, PenSquare, Menu } from 'lucide-react';
 import InboxNavbar from '../components/InboxNavbar';
 import EmailList from '../components/EmailList';
@@ -48,6 +49,21 @@ function InboxPage() {
       }
     }).catch(() => setAccounts([]));
   }, [selectedAccountId]);
+
+  // Deep-link: auto-select email from ?email=<id> query param
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const emailId = searchParams.get('email');
+    if (emailId && emails.length > 0 && (!selected || selected.id !== emailId)) {
+      const target = emails.find(e => e.id === emailId);
+      if (target) {
+        setSelected(target);
+        // Clear the param so browser back doesn't re-trigger
+        searchParams.delete('email');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [emails, searchParams, selected, setSearchParams]);
 
   const chooseAccount = (accountId) => {
     setSelectedAccountId(accountId);

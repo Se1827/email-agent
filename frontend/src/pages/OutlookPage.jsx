@@ -5,7 +5,8 @@ import {
   Paperclip, Clock, CheckCircle2, AlertCircle, Wifi,
   WifiOff, MoreHorizontal, Search, X, Loader2, Sparkles,
   Tag, FileText, Zap, CalendarPlus, Plane, AlertTriangle,
-  CreditCard, GitPullRequest, ClipboardList, ShieldAlert, Newspaper
+  CreditCard, GitPullRequest, ClipboardList, ShieldAlert, Newspaper,
+  Folder, File, MapPin
 } from 'lucide-react';
 import { ScenarioStrip } from '../components/SmartCard';
 import { detectScenario } from '../utils';
@@ -503,7 +504,7 @@ function MailTab() {
               <div className="ol-ai-panel ol-ai-panel-cal">
                 <div className="ol-ai-panel-title"><CalendarPlus size={13}/> Added to Calendar</div>
                 <div className="ol-cal-event-info">
-                  <div className="ol-cal-event-title">📅 {aiCalEvent.title}</div>
+                  <div className="ol-cal-event-title"><Calendar size={14} style={{marginRight: 4, display: 'inline', verticalAlign: 'text-bottom'}} /> {aiCalEvent.title}</div>
                   <div className="ol-cal-event-time">
                     {aiCalEvent.start && new Date(aiCalEvent.start).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     {aiCalEvent.end && ` → ${new Date(aiCalEvent.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
@@ -575,11 +576,11 @@ function CalendarTab() {
           attendees: form.attendees ? form.attendees.split(',').map(s => s.trim()).filter(Boolean) : [],
         }),
       });
-      showToast('✅ Event created!');
+      showToast('Event created!');
       setShowForm(false);
       setForm({ subject: '', start_iso: '', end_iso: '', body: '', attendees: '' });
       load();
-    } catch (e) { showToast(`❌ ${e.message}`, 'error'); }
+    } catch (e) { showToast(`${e.message}`, 'error'); }
     finally { setSaving(false); }
   };
 
@@ -646,7 +647,7 @@ function CalendarTab() {
                   {end ? ` → ${new Date(end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
                 </div>
                 {ev.location?.displayName && (
-                  <div className="ol-event-location">📍 {ev.location.displayName}</div>
+                  <div className="ol-event-location"><MapPin size={12} style={{marginRight: 4, display: 'inline', verticalAlign: 'text-bottom'}} /> {ev.location.displayName}</div>
                 )}
                 {(ev.attendees || []).length > 0 && (
                   <div className="ol-event-attendees">
@@ -745,7 +746,7 @@ function FilesTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const icon = item => item.folder ? '📁' : '📄';
+  const FileIcon = ({item}) => item.folder ? <Folder size={14} /> : <File size={14} />;
   const size = bytes => {
     if (!bytes) return '';
     if (bytes < 1024) return `${bytes} B`;
@@ -768,7 +769,7 @@ function FilesTab() {
       <div className="ol-files-list glass-card">
         {items.map((item, i) => (
           <div key={item.id || i} className="ol-file-row">
-            <span className="ol-file-icon">{icon(item)}</span>
+            <span className="ol-file-icon"><FileIcon item={item} /></span>
             <div className="ol-file-info">
               <div className="ol-file-name">{item.name}</div>
               <div className="ol-file-meta">
@@ -904,7 +905,7 @@ function TeamsTab() {
       });
       showToast('Teams message sent!');
       setMessage('');
-    } catch (e) { showToast(e.message, 'error'); }
+    } catch (e) { showToast(`${e.message}`, 'error'); }
     finally { setSending(false); }
   };
 

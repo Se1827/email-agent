@@ -2,7 +2,8 @@ import { useState } from 'react';
 import {
   Plane, CalendarDays, CheckCircle2, AlertTriangle, Mail,
   ExternalLink, X, ShieldAlert, Clock, Users,
-  CreditCard, GitPullRequest, ClipboardList, Newspaper
+  CreditCard, GitPullRequest, ClipboardList, Newspaper,
+  Landmark, ArrowRight, Sparkles
 } from 'lucide-react';
 import {
   detectScenario,
@@ -29,10 +30,34 @@ function extractMeetingTime(body = '') {
   return m ? m[1] : null;
 }
 
-function SafeLink({ url, label }) {
+function SafeLink({ url, isSpam }) {
   const [confirmed, setConfirmed] = useState(false);
   if (!url) return null;
   const short = url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40);
+
+  if (isSpam) {
+    return (
+      <div className="sc-safe-link sc-safe-link--blocked" style={{ opacity: 0.85 }}>
+        <ShieldAlert size={12} style={{ color: '#ef4444' }} />
+        <span className="sc-safe-link-url" style={{ textDecoration: 'line-through', color: '#f87171' }}>
+          {short}{url.length > 43 ? '…' : ''}
+        </span>
+        <span style={{
+          background: 'rgba(239, 68, 68, 0.15)',
+          color: '#ef4444',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '6px',
+          padding: '3px 8px',
+          fontSize: '10.5px',
+          fontWeight: 600,
+          whiteSpace: 'nowrap'
+        }}>
+          Blocked
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="sc-safe-link">
       <ShieldAlert size={12} className="sc-safe-link-icon" />
@@ -88,18 +113,18 @@ function FlightCard({ email, onDismiss, onNavigate }) {
               PNR: {pnr}
             </span>
           )}
-          <span className="sc-chip sc-chip--neutral">✈️ Booking</span>
+          <span className="sc-chip sc-chip--neutral"><Plane size={10} /> Booking</span>
         </div>
         {links.length > 0 && (
           <div className="sc-link-section">
-            <span className="sc-link-label">⚠️ External link — verify before opening</span>
+            <span className="sc-link-label"><AlertTriangle size={10} /> External link — verify before opening</span>
             <SafeLink url={links[0]} />
           </div>
         )}
       </div>
       <div className="sc-card-actions">
         <button className="sc-action-btn sc-action-btn--primary" onClick={onNavigate}>
-          View Booking ➔
+          View Booking <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -134,7 +159,7 @@ function MeetingCard({ email, onDismiss, onNavigate }) {
         </div>
         {links.length > 0 && (
           <div className="sc-link-section">
-            <span className="sc-link-label">⚠️ Join Link</span>
+            <span className="sc-link-label"><AlertTriangle size={10} /> Join Link</span>
             <SafeLink url={links[0]} />
           </div>
         )}
@@ -144,7 +169,7 @@ function MeetingCard({ email, onDismiss, onNavigate }) {
           Add to Calendar
         </button>
         <button className="sc-action-btn sc-action-btn--ghost" onClick={onNavigate}>
-          View Event ➔
+          View Event <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -171,10 +196,10 @@ function GoodNewsCard({ email, onDismiss, onNavigate }) {
       </div>
       <div className="sc-card-actions" style={{ flexDirection: 'row', gap: 6 }}>
         <button className="sc-action-btn sc-action-btn--success" onClick={onDismiss}>
-          Got it ✓
+          <CheckCircle2 size={11} /> Got it
         </button>
         <button className="sc-action-btn sc-action-btn--ghost" onClick={onNavigate}>
-          View Email ➔
+          View Email <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -201,14 +226,14 @@ function AlertCard({ email, onDismiss, onNavigate }) {
         <div className="sc-card-body-text">{(email.body || '').slice(0, 80).trim()}…</div>
         {links.length > 0 && (
           <div className="sc-link-section">
-            <span className="sc-link-label">⚠️ Verification Link</span>
+            <span className="sc-link-label"><AlertTriangle size={10} /> Verification Link</span>
             {links.slice(0, 1).map((l, i) => <SafeLink key={i} url={l} />)}
           </div>
         )}
       </div>
       <div className="sc-card-actions">
         <button className="sc-action-btn sc-action-btn--primary" onClick={onNavigate}>
-          View Alert ➔
+          View Alert <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -239,18 +264,18 @@ function FinanceCard({ email, onDismiss, onNavigate }) {
               Amount: {details.amount}
             </span>
           )}
-          {details.bank && <span className="sc-chip sc-chip--neutral">🏦 {details.bank}</span>}
+          {details.bank && <span className="sc-chip sc-chip--neutral"><Landmark size={10} /> {details.bank}</span>}
         </div>
         {links.length > 0 && (
           <div className="sc-link-section">
-            <span className="sc-link-label">⚠️ Invoice Link</span>
+            <span className="sc-link-label"><AlertTriangle size={10} /> Invoice Link</span>
             <SafeLink url={links[0]} />
           </div>
         )}
       </div>
       <div className="sc-card-actions" style={{ flexDirection: 'row', gap: 6 }}>
         <button className="sc-action-btn sc-action-btn--primary" onClick={onNavigate}>
-          Pay Invoice ➔
+          Pay Invoice <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -277,14 +302,14 @@ function CodeCard({ email, onDismiss, onNavigate }) {
         <div className="sc-card-body-text">{(email.body || '').slice(0, 80)}...</div>
         {links.length > 0 && (
           <div className="sc-link-section">
-            <span className="sc-link-label">⚠️ Repo Link</span>
+            <span className="sc-link-label"><AlertTriangle size={10} /> Repo Link</span>
             <SafeLink url={links[0]} />
           </div>
         )}
       </div>
       <div className="sc-card-actions">
         <button className="sc-action-btn sc-action-btn--primary" onClick={onNavigate}>
-          Review PR ➔
+          Review PR <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -311,7 +336,7 @@ function TaskCard({ email, onDismiss, onNavigate }) {
       </div>
       <div className="sc-card-actions">
         <button className="sc-action-btn sc-action-btn--primary" onClick={onNavigate}>
-          Complete Task ➔
+          Complete Task <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -327,7 +352,7 @@ function SpamCard({ email, onDismiss, onNavigate }) {
           <ShieldAlert size={15} />
         </div>
         <div className="sc-card-meta">
-          <span className="sc-card-label" style={{ color: '#ef4444', fontWeight: 'bold' }}>⚠️ SYSTEM WARNING: SPAM</span>
+          <span className="sc-card-label" style={{ color: '#ef4444', fontWeight: 'bold' }}>SYSTEM WARNING: SPAM</span>
           <span className="sc-card-sender">{email.sender?.split('@')[0]}</span>
         </div>
         <button className="sc-dismiss" onClick={onDismiss}><X size={13} /></button>
@@ -338,7 +363,7 @@ function SpamCard({ email, onDismiss, onNavigate }) {
       </div>
       <div className="sc-card-actions">
         <button className="sc-action-btn sc-action-btn--primary" style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)' }} onClick={onDismiss}>
-          Report & Delete ✕
+          Report & Delete <X size={11} />
         </button>
       </div>
     </div>
@@ -365,7 +390,7 @@ function NewsletterCard({ email, onDismiss, onNavigate }) {
       </div>
       <div className="sc-card-actions">
         <button className="sc-action-btn sc-action-btn--primary" onClick={onNavigate}>
-          Read Article ➔
+          Read Article <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -394,7 +419,7 @@ function DefaultCard({ email, onDismiss, onNavigate }) {
       </div>
       <div className="sc-card-actions">
         <button className="sc-action-btn sc-action-btn--primary" onClick={onNavigate}>
-          View Email ➔
+          View Email <ArrowRight size={11} />
         </button>
       </div>
     </div>
@@ -451,7 +476,7 @@ export function ScenarioStrip({ email }) {
     finance:    'Payment Details / Invoice',
     code:       'Code Review / PR Request',
     task:       'Task Reminder / Action Required',
-    spam:       '⚠️ Spam Detection Alert',
+    spam:       'Spam Detection Alert',
     newsletter: 'Newsletter / Weekly Digest',
     default:    null,
   };
@@ -501,9 +526,9 @@ export function ScenarioStrip({ email }) {
           </span>
         )}
         {details && details.bank && (
-          <span className="sc-chip sc-chip--neutral">🏦 {details.bank}</span>
+          <span className="sc-chip sc-chip--neutral"><Landmark size={10} /> {details.bank}</span>
         )}
-        <span className="sc-chip sc-chip--neutral">✦ AI Insight</span>
+        <span className="sc-chip sc-chip--neutral"><Sparkles size={10} /> AI Insight</span>
       </div>
 
       {scenario === 'meeting' && (
@@ -517,15 +542,23 @@ export function ScenarioStrip({ email }) {
       {scenario === 'finance' && (
         <div className="sc-card-actions" style={{ marginTop: '8px', marginBottom: '8px' }}>
           <button className="sc-action-btn" style={{ color: t.accent, background: `${t.accent}14`, borderColor: `${t.accent}30` }}>
-            Pay Invoice ➔
+            Pay Invoice <ArrowRight size={11} />
           </button>
         </div>
       )}
 
       {links.length > 0 && (
         <div className="sc-link-section" style={{ marginTop: '8px' }}>
-          <span className="sc-link-label">⚠️ External link — verify before opening</span>
-          {links.slice(0, 2).map((l, i) => <SafeLink key={i} url={l} />)}
+          <span className="sc-link-label">
+            {scenario === 'spam' ? (
+              <><ShieldAlert size={10} style={{ color: '#ef4444' }} /> Potentially dangerous link blocked</>
+            ) : (
+              <><AlertTriangle size={10} /> External link — verify before opening</>
+            )}
+          </span>
+          {links.slice(0, 2).map((l, i) => (
+            <SafeLink key={i} url={l} isSpam={scenario === 'spam'} />
+          ))}
         </div>
       )}
     </div>

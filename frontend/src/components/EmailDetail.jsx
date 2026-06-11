@@ -175,7 +175,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
                     setExpandedMsgs(new Set([msgs[msgs.length - 1].id]));
                 }
             });
-            showToast('Reply sent successfully! ✉️');
+            showToast('Reply sent successfully!');
         } catch (err) {
             showToast(err.message, 'error');
         } finally {
@@ -197,7 +197,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
                 setExpandedMsgs(new Set([msgs[msgs.length - 1].id]));
             }
             onReload?.();
-            showToast('Reply sent successfully! ✉️');
+            showToast('Reply sent successfully!');
         } catch (err) {
             showToast(err.message, 'error');
         } finally {
