@@ -39,7 +39,10 @@ class DraftQuality(str, Enum):
 # ---------------------------------------------------------------------------
 
 class Email(BaseModel):
+    # Format: {account_id}:{mailbox}:{uidvalidity}:{uid}
     id: str
+    uid: Optional[int] = None
+    uidvalidity: Optional[int] = None
     inbox: Optional[str] = None
     account_id: Optional[str] = None
     sender: str
@@ -146,6 +149,15 @@ class AccountConfig(BaseModel):
     smtp_use_tls: bool = True    # STARTTLS (port 587)
     color: str = "#3b82f6"
     is_active: bool = True
+
+
+class SyncState(BaseModel):
+    account_id: str
+    mailbox: str
+    uidvalidity: int
+    last_uid: int
+    highestmodseq: int = 0
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # Rebuild Email so the forward references resolve.
