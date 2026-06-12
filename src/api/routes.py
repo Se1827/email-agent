@@ -252,7 +252,7 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
             except Exception as exc:
                 log.exception("graph_email_parse_failed", extra={"msg_id": m.get("id"), "error": str(exc)})
         return emails
-    return fetch_imap_emails(
+    emails = fetch_imap_emails(
         host=account.imap_host or cfg.imap_host,
         port=account.imap_port or cfg.imap_port,
         username=account.imap_user or account.email or cfg.imap_user,
@@ -262,6 +262,33 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
         use_ssl=account.imap_use_ssl,
         inbox=inbox,
     )
+    
+    # Also attempt to fetch Sent emails so we see replies sent from official webmail/clients
+    try:
+        sent_mailbox = "[Gmail]/Sent Mail" if "gmail" in (account.imap_host or "").lower() else "Sent"
+        sent_emails = fetch_imap_emails(
+            host=account.imap_host or cfg.imap_host,
+            port=account.imap_port or cfg.imap_port,
+            username=account.imap_user or account.email or cfg.imap_user,
+            password=account.imap_pass or cfg.imap_pass,
+            mailbox=sent_mailbox,
+            limit=cfg.imap_fetch_limit,
+            use_ssl=account.imap_use_ssl,
+            inbox=inbox,
+        )
+        emails.extend(sent_emails)
+    except Exception as exc:
+        log.info("Failed to fetch sent mailbox", extra={"error": str(exc), "account": account.email})
+
+    # Ensure sent emails are marked as is_sent
+    from_addr = account.email or cfg.imap_user
+    if from_addr:
+        from_addr = from_addr.lower()
+        for e in emails:
+            if from_addr in e.sender.lower():
+                e.is_sent = True
+
+    return emails
 
 
 def _stamp_account_email(email: Email, account: AccountConfig, inbox: str) -> None:
@@ -379,6 +406,25 @@ def _load_emails_from_storage(inbox: str, *, account: AccountConfig | None = Non
 def _merge_source_email(email: Email, *, source: str) -> None:
     """Merge a fresh source email into DB-seeded inbox state."""
     email.inbox = email.inbox or _current_inbox()
+    
+    # ── DEDUPLICATION LOGIC ──
+    # If we already have a locally created "sent" email with this exact Message-ID,
+    # we should remove it in favor of this real one fetched from IMAP.
+    if email.message_id:
+        to_delete = []
+        for existing in list(_emails.values()):
+            if existing.id != email.id and existing.message_id == email.message_id:
+                # Check if the existing one is a synthetic sent record
+                if ":sent-" in existing.id or existing.id.startswith("sent-"):
+                    to_delete.append(existing.id)
+        
+        for old_id in to_delete:
+            _emails.pop(old_id, None)
+            try:
+                delete_email_records(old_id)
+            except Exception as exc:
+                log.error("Failed to delete duplicate synthetic email", extra={"error": str(exc)})
+
     cached = _emails.get(email.id)
     if cached is None and email.account_id and email.id.startswith(f"{email.account_id}:"):
         legacy_id = email.id.split(":", 1)[1]

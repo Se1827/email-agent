@@ -467,9 +467,9 @@ function EmailDetail({ email, onUpdate, onReload }) {
                             <button
                                 className="btn btn-primary"
                                 onClick={handleSendReply}
-                                disabled={sendingReply || !replyBody.trim()}
+                                disabled={!!busy || !replyBody.trim()}
                             >
-                                {sendingReply ? (
+                                {busy === 'reply' ? (
                                     <><RotateCcw size={14} className="spin" /> Sending...</>
                                 ) : (
                                     <><Send size={14} /> Send Reply</>
