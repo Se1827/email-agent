@@ -165,7 +165,7 @@ router = APIRouter()
 class ThreadSafeDict(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         
     def __getitem__(self, key):
         with self.lock:
@@ -185,9 +185,7 @@ class ThreadSafeDict(dict):
             
     def pop(self, key, default=None):
         with self.lock:
-            if key in self:
-                return super().pop(key)
-            return default
+            return super().pop(key, default)
             
     def clear(self):
         with self.lock:

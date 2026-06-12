@@ -140,7 +140,13 @@ def sync_mailbox(
         # Capabilities often change after login (e.g. CONDSTORE becomes available)
         conn.capability()
         
-        caps = [c.decode('ascii').upper() for c in conn.capabilities]
+        caps = []
+        for c in conn.capabilities:
+            if isinstance(c, bytes):
+                caps.append(c.decode('ascii', errors='ignore').upper())
+            else:
+                caps.append(str(c).upper())
+                
         if "ENABLE" in caps:
             try:
                 conn._simple_command("ENABLE", "CONDSTORE")
@@ -337,7 +343,7 @@ def idle_loop(
             conn = klass(host, port)
             conn.login(username, password)
             conn.select(mailbox, readonly=True)
-            conn.socket().settimeout(29 * 60)
+            conn.sock.settimeout(29 * 60)
             
             while True:
                 # Send IDLE command
