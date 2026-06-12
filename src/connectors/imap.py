@@ -117,18 +117,25 @@ def fetch_emails(
     conn = klass(host, port)
     try:
         conn.login(username, password)
-        conn.select(mailbox, readonly=True)
+        _select_status, select_data = conn.select(mailbox, readonly=True)
 
-        # Search for all messages, take the latest `limit`.
-        _status, data = conn.search(None, "ALL")
-        msg_nums = data[0].split()
-        if not msg_nums:
-            log.info("imap_empty", extra={"mailbox": mailbox})
-            return []
-
-        # Most recent first.
-        msg_nums = msg_nums[-limit:]
-        msg_nums.reverse()
+        # Optimize: get message count directly from select rather than searching all
+        try:
+            total_msgs = int(select_data[0])
+            if total_msgs == 0:
+                log.info("imap_empty", extra={"mailbox": mailbox})
+                return []
+            start_num = max(1, total_msgs - limit + 1)
+            msg_nums = [str(i).encode() for i in range(total_msgs, start_num - 1, -1)]
+        except (ValueError, TypeError, IndexError):
+            # Fallback for non-standard servers
+            _search_status, search_data = conn.search(None, "ALL")
+            msg_nums = search_data[0].split()
+            if not msg_nums:
+                log.info("imap_empty", extra={"mailbox": mailbox})
+                return []
+            msg_nums = msg_nums[-limit:]
+            msg_nums.reverse()
 
         emails: list[Email] = []
         for num in msg_nums:
@@ -157,12 +164,6 @@ def fetch_emails(
             raw_in_reply_to = msg.get("In-Reply-To", "").strip() or None
             raw_references_hdr = msg.get("References", "")
             ref_list = raw_references_hdr.split() if raw_references_hdr else []
-
-            # ── DIAGNOSTIC: log every email's raw Message-ID from IMAP ──
-            log.warning(
-                "IMAP_DIAG | subj=%s | from=%s | raw_Message-ID=%s | in_reply_to=%s | refs=%s",
-                subject[:60], sender, raw_msg_id, raw_in_reply_to, ref_list,
-            )
 
             # thread_id = first reference (thread root), or In-Reply-To,
             # or own Message-ID (standalone email).
