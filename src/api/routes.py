@@ -810,6 +810,15 @@ def _do_send_reply(
     cc_addrs: list[str] | None,
 ) -> Email:
     """Core logic for sending a reply — used by both send-reply and approve."""
+    # ── DIAGNOSTIC: dump EVERYTHING about the original email ──
+    log.warning(
+        "REPLY_DIAG | original.id=%s | original.message_id=%s | original.subject=%s | "
+        "original.sender=%s | original.timestamp=%s | original.in_reply_to=%s | "
+        "original.references=%s | original.thread_id=%s | original.storage_origin=%s",
+        original.id, original.message_id, original.subject,
+        original.sender, original.timestamp, original.in_reply_to,
+        original.references, original.thread_id, original.storage_origin,
+    )
     cfg = get_settings()
     account = _resolve_email_account(original)
 
@@ -824,6 +833,20 @@ def _do_send_reply(
     from src.connectors.smtp import _normalize_subject_for_reply
     reply_subject = _normalize_subject_for_reply(original.subject)
 
+    # ── CRAZY DEBUGGING / HEURISTICS FIX ──────────────────────────────────
+    # Gmail and some strict clients will break threads if the email is a
+    # "naked reply" (i.e., it doesn't contain the quoted text of the previous
+    # message). We must inject standard quoted text at the bottom.
+    try:
+        from datetime import datetime
+        orig_date_str = original.timestamp.strftime("%a, %b %d, %Y at %I:%M %p")
+    except Exception:
+        orig_date_str = "recently"
+
+    quoted_lines = [f"> {line}" for line in (original.body or "").splitlines()]
+    quoted_text = "\n".join(quoted_lines)
+    full_body = f"{body}\n\nOn {orig_date_str}, {original.sender} wrote:\n{quoted_text}"
+
     now = datetime.now(timezone.utc)
     
     def _ensure_brackets(val: str) -> str:
@@ -834,10 +857,34 @@ def _do_send_reply(
             val = val + ">"
         return val
 
-    reply_to_msg_id = _ensure_brackets(original.message_id) if original.message_id else None
-    refs = [_ensure_brackets(r) for r in original.references if r]
-    if reply_to_msg_id and reply_to_msg_id not in refs:
-        refs.append(reply_to_msg_id)
+    reply_to_msg_id = None
+    refs = []
+
+    # RFC-compliant Message-IDs always contain '@' (format: <unique@domain>).
+    # Some mail servers (e.g. Elektrine/Haraka) replace the original Message-ID
+    # with an internal UUID that has NO '@'. If we send In-Reply-To/References
+    # pointing to this corrupted ID, the remote client (Gmail) won't recognise
+    # it and will treat the reply as a brand-new email.
+    # Fix: detect corrupted IDs and SKIP threading headers entirely — Gmail
+    # will fall back to subject+participant-based threading which works.
+    raw_mid = original.message_id or ""
+    if "@" in raw_mid:
+        # Valid RFC Message-ID — safe to use for threading
+        reply_to_msg_id = _ensure_brackets(raw_mid)
+        refs = [_ensure_brackets(r) for r in original.references if r and "@" in r]
+        if reply_to_msg_id and reply_to_msg_id not in refs:
+            refs.append(reply_to_msg_id)
+        log.warning(
+            "smtp_reply_thread_headers | VALID Message-ID | In-Reply-To=%s | refs=%s",
+            reply_to_msg_id, refs,
+        )
+    else:
+        # Corrupted/replaced Message-ID — skip threading headers
+        log.warning(
+            "smtp_reply_thread_headers | CORRUPTED Message-ID (no @) = %s | "
+            "SKIPPING In-Reply-To and References — relying on subject threading",
+            raw_mid,
+        )
     
     if account.provider == "graph":
         from src.connectors.graph import graph
@@ -846,7 +893,7 @@ def _do_send_reply(
             to=to_addrs,
             cc=cc_addrs,
             subject=reply_subject,
-            body_html=body,
+            body_html=full_body,
             reply_to_id=raw_msg_id
         )
         # Graph handles threading. We create a local sent email to show immediately.
@@ -867,7 +914,7 @@ def _do_send_reply(
             to_addrs=to_addrs,
             cc_addrs=cc_addrs,
             subject=reply_subject,
-            body=body,
+            body=full_body,
             in_reply_to=reply_to_msg_id,
             references=refs,
         )

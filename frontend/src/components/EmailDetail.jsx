@@ -161,7 +161,12 @@ function EmailDetail({ email, onUpdate, onReload }) {
     const handleApprove = async () => {
         setBusy('approve');
         try {
-            const result = await approveDraft(email.id);
+            // Sort thread by timestamp to guarantee we get the absolute newest message
+            const sortedThread = [...thread].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const latestReceived = sortedThread.reverse().find(m => !m.is_sent);
+            const replyTargetId = latestReceived?.id || email.id;
+
+            const result = await approveDraft(replyTargetId);
             const updated = await fetchEmail(email.id);
             onUpdate(updated);
             setEditedDraft(null);
@@ -183,10 +188,15 @@ function EmailDetail({ email, onUpdate, onReload }) {
     };
 
     const handleSendReply = async () => {
-        if (!replyBody.trim()) return;
-        setSendingReply(true);
+        if (!replyBody.trim() || busy) return;
+        setBusy('reply');
         try {
-            await sendReply(email.id, replyBody);
+            // Sort thread by timestamp to guarantee we get the absolute newest message
+            const sortedThread = [...thread].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const latestReceived = sortedThread.reverse().find(m => !m.is_sent);
+            const replyTargetId = latestReceived?.id || email.id;
+
+            await sendReply(replyTargetId, replyBody);
             setReplyBody('');
             setShowReply(false);
             // Refresh thread
@@ -200,7 +210,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
         } catch (err) {
             showToast(err.message, 'error');
         } finally {
-            setSendingReply(false);
+            setBusy(null);
         }
     };
 

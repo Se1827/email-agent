@@ -70,7 +70,7 @@ def send_email(
     cc_addrs = cc_addrs or []
 
     # Extract domain from sender address for Message-ID generation
-    domain = from_addr.split("@")[-1] if "@" in from_addr else "emailagent.local"
+    domain = from_addr.split("@")[-1].strip(">").strip() if "@" in from_addr else "emailagent.local"
     msg_id = message_id or _generate_message_id(domain=domain)
 
     # Build MIME message
@@ -92,6 +92,20 @@ def send_email(
     # Attach plain-text body
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
+    # Convert plain body to HTML for the rich part
+    import html
+    html_body = []
+    for line in body.splitlines():
+        escaped = html.escape(line)
+        if escaped.startswith("&gt;"):
+            # It's a quoted line
+            html_body.append(f'<span style="color: #888;">{escaped}</span><br>')
+        else:
+            html_body.append(f'{escaped}<br>')
+            
+    html_content = f"<html><body>{''.join(html_body)}</body></html>"
+    msg.attach(MIMEText(html_content, "html", "utf-8"))
+
     # All recipients (To + Cc)
     all_recipients = list(to_addrs) + list(cc_addrs)
 
@@ -104,6 +118,9 @@ def send_email(
             "to_count": len(to_addrs),
             "cc_count": len(cc_addrs),
             "has_reply_to": bool(in_reply_to),
+            "in_reply_to": in_reply_to,
+            "references": references,
+            "message_id": msg_id,
         },
     )
 
