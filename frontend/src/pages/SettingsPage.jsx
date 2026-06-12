@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Settings, Shield, Database, Activity, Link2,
   Server, Eye, Lock, Wifi, WifiOff, ExternalLink,
-  Plus, Save, Trash2, X, Pencil
+  Plus, Save, Trash2, X, Pencil, Zap, Brain
 } from 'lucide-react';
 import {
   createAccount,
@@ -12,6 +12,8 @@ import {
   updateAccount,
   fetchGraphConfig,
   updateGraphConfig,
+  fetchAIMode,
+  updateAIMode,
 } from '../api';
 import './SettingsPage.css';
 
@@ -56,18 +58,28 @@ function SettingsPage() {
   });
   const [savingGraph, setSavingGraph] = useState(false);
 
+  // AI Mode state
+  const [aiMode, setAiMode] = useState(null);
+  const [aiModeOptions, setAiModeOptions] = useState([]);
+  const [switchingMode, setSwitchingMode] = useState(false);
+
   const loadSettings = () => {
     setLoading(true);
     return Promise.all([
       fetchAccounts().catch(() => []),
       fetchStorageStats().catch(() => null),
       fetchGraphConfig().catch(() => null),
-    ]).then(([acc, stor, graph]) => {
+      fetchAIMode().catch(() => null),
+    ]).then(([acc, stor, graph, aiModeData]) => {
       setAccounts(acc);
       setStorage(stor);
       if (graph) {
         setGraphConfig(graph);
         setGraphForm(graph);
+      }
+      if (aiModeData) {
+        setAiMode(aiModeData.ai_mode);
+        setAiModeOptions(aiModeData.options || []);
       }
       setLoading(false);
     });
@@ -156,6 +168,19 @@ function SettingsPage() {
       alert(err.message || 'Could not save Graph config.');
     } finally {
       setSavingGraph(false);
+    }
+  };
+
+  const handleAIModeSwitch = async (newMode) => {
+    if (newMode === aiMode || switchingMode) return;
+    setSwitchingMode(true);
+    try {
+      const result = await updateAIMode(newMode);
+      setAiMode(result.ai_mode);
+    } catch (err) {
+      alert(err.message || 'Could not switch AI mode.');
+    } finally {
+      setSwitchingMode(false);
     }
   };
 
@@ -313,6 +338,51 @@ function SettingsPage() {
               </div>
             </form>
           )}
+        </section>
+
+        {/* AI Engine Mode */}
+        <section className="settings-card glass-card animate-slide-up" style={{animationDelay: '0.025s'}}>
+          <div className="settings-card-header">
+            <Brain size={18} />
+            <h2>AI Engine</h2>
+            {aiMode && (
+              <span className={`ai-mode-badge ${aiMode === 'ai_rich' ? 'ai-rich' : 'classic'}`}>
+                {aiMode === 'ai_rich' ? 'AI-Rich' : 'Classic'}
+              </span>
+            )}
+          </div>
+          <p className="settings-card-desc">
+            Choose how the AI processes your emails. Classic is fast and cost-effective; AI-Rich uses multi-agent orchestration for deeper understanding.
+          </p>
+          <div className="ai-mode-selector">
+            {aiModeOptions.map((opt) => (
+              <button
+                key={opt.value}
+                className={`ai-mode-option ${aiMode === opt.value ? 'active' : ''} ${switchingMode ? 'switching' : ''}`}
+                onClick={() => handleAIModeSwitch(opt.value)}
+                disabled={switchingMode}
+              >
+                <div className="ai-mode-option-icon">
+                  {opt.value === 'classic' ? <Zap size={22} /> : <Brain size={22} />}
+                </div>
+                <div className="ai-mode-option-content">
+                  <div className="ai-mode-option-header">
+                    <strong>{opt.label}</strong>
+                    <span className="ai-mode-option-badge">{opt.badge}</span>
+                  </div>
+                  <p>{opt.description}</p>
+                </div>
+                {aiMode === opt.value && (
+                  <div className="ai-mode-active-indicator">
+                    <div className="ai-mode-pulse" />
+                  </div>
+                )}
+              </button>
+            ))}
+            {aiModeOptions.length === 0 && !loading && (
+              <div className="settings-empty">AI mode configuration unavailable.</div>
+            )}
+          </div>
         </section>
 
         {/* PII Protection */}

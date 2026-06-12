@@ -150,3 +150,15 @@ export function getAttachmentUrl(emailId, filename) {
 export function fetchAttachments(emailId) {
     return request(`/emails/${emailId}/attachments`);
 }
+
+// ---- AI Mode Settings ----
+export function fetchAIMode() {
+    return request('/settings/ai-mode');
+}
+
+export function updateAIMode(mode) {
+    return request('/settings/ai-mode', {
+        method: 'POST',
+        body: JSON.stringify({ ai_mode: mode }),
+    });
+}

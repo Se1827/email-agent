@@ -604,6 +604,186 @@ input[type="color"].input {
   color: var(--text-muted);
 }
 
+/* ---- AI Mode Selector ---- */
+.ai-mode-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ai-mode-badge.classic {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.15), rgba(245, 158, 11, 0.15));
+  color: #fbbf24;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+}
+
+.ai-mode-badge.ai-rich {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15));
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.ai-mode-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai-mode-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1.5px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+  color: var(--text-secondary);
+  position: relative;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+.ai-mode-option::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.ai-mode-option:hover:not(.active) {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
+}
+
+.ai-mode-option.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08));
+  box-shadow:
+    0 0 0 1px rgba(99, 102, 241, 0.3),
+    0 4px 20px rgba(99, 102, 241, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.ai-mode-option.switching {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.ai-mode-option-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+
+.ai-mode-option.active .ai-mode-option-icon {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #a78bfa;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+}
+
+.ai-mode-option-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-mode-option-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 4px;
+}
+
+.ai-mode-option-header strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.ai-mode-option.active .ai-mode-option-header strong {
+  background: linear-gradient(135deg, #e0e7ff, #c4b5fd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ai-mode-option-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-mode-option.active .ai-mode-option-badge {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+  color: #a78bfa;
+}
+
+.ai-mode-option-content p {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ai-mode-option.active .ai-mode-option-content p {
+  color: var(--text-secondary);
+}
+
+.ai-mode-active-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.ai-mode-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+  animation: ai-pulse 2s ease-in-out infinite;
+}
+
+@keyframes ai-pulse {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(16, 185, 129, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.7);
+    transform: scale(1.15);
+  }
+}
+
 @media (max-width: 980px) {
   .settings-grid,
   .account-form-grid {

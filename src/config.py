@@ -59,6 +59,9 @@ class Settings:
     # Draft quality default.
     default_draft_quality: str
 
+    # AI Mode: "classic" (fast, single-pass) or "ai_rich" (multi-agent orchestration).
+    ai_mode: str
+
     @classmethod
     def from_env(cls) -> Settings:
         api_key = os.getenv("GROQ_API_KEY", "")
@@ -97,6 +100,7 @@ class Settings:
             smtp_use_ssl=os.getenv("SMTP_USE_SSL", "false").lower() == "true",
             smtp_use_tls=os.getenv("SMTP_USE_TLS", "true").lower() == "true",
             default_draft_quality=os.getenv("DEFAULT_DRAFT_QUALITY", "balanced"),
+            ai_mode=_normalize_ai_mode(os.getenv("AI_MODE", "classic")),
         )
 
 
@@ -112,3 +116,36 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings.from_env()
     return _settings
+
+
+def update_ai_mode(mode: str) -> str:
+    """Update the AI mode at runtime and return the normalized value.
+
+    This replaces the frozen Settings with a new copy. The .env file
+    is updated by the API route caller.
+    """
+    from dataclasses import fields as dc_fields
+    global _settings
+    normalized = _normalize_ai_mode(mode)
+    if _settings is not None:
+        # Settings is frozen, so we re-create it with the new mode
+        current = _settings
+        kwargs = {f.name: getattr(current, f.name) for f in dc_fields(current)}
+        kwargs["ai_mode"] = normalized
+        _settings = Settings(**kwargs)
+    return normalized
+
+
+def _normalize_ai_mode(mode: str) -> str:
+    """Normalize AI mode string to one of the valid values."""
+    normalized = mode.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "classic": "classic",
+        "classic_ai": "classic",
+        "fast": "classic",
+        "ai_rich": "ai_rich",
+        "rich": "ai_rich",
+        "orchestrated": "ai_rich",
+        "multi_agent": "ai_rich",
+    }
+    return aliases.get(normalized, "classic")

@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timedelta
 
 from src.llm import client as llm
+from src.llm.date_fast import resolve_fast
 from src.llm.date_resolver import ResolvedDate, resolve_proposed_datetime
 from src.llm.prompts import CLASSIFY_SYSTEM, CLASSIFY_USER
 from src.models.email import CalendarEvent, Classification, Email
@@ -572,8 +573,12 @@ def extract_meeting_event(
 async def classify(
     email: Email,
     calendar_events: list[CalendarEvent] | None = None,
+    ai_mode: str = "classic",
 ) -> tuple[Classification, ResolvedDate | None]:
     """Classify an email by priority and category.
+
+    In Classic mode, uses the fast regex date resolver first, falling back
+    to the LLM resolver only when the fast path returns None.
 
     Returns a (Classification, ResolvedDate | None) tuple. The resolved date
     is extracted by an LLM sub-agent and should be forwarded to
@@ -582,11 +587,15 @@ async def classify(
     privacy = PrivacyGateway()
     all_events = calendar_events or []
 
-    # ── LLM date resolution (replaces regex extraction) ───────────────
+    # ── Date resolution ────────────────────────────────────────────────
     clean_body = _strip_quoted_text(email.body)
-    resolved = await resolve_proposed_datetime(
-        email.subject, clean_body, email.timestamp,
-    )
+
+    # Classic mode: try fast regex path first, fallback to LLM
+    resolved = resolve_fast(email.subject, clean_body, email.timestamp)
+    if resolved is None:
+        resolved = await resolve_proposed_datetime(
+            email.subject, clean_body, email.timestamp,
+        )
 
     # Build calendar context using LLM-resolved date
     if resolved:
@@ -655,6 +664,7 @@ async def classify(
             "total_events": len(all_events),
             "resolved_date": resolved.date.isoformat() if resolved else None,
             "resolved_is_all_day": resolved.is_all_day if resolved else None,
+            "ai_mode": ai_mode,
         },
     )
     return parsed, resolved

@@ -764,7 +764,7 @@ async def classify_email(
             subject_id=email.id,
         )
         return email.classification.model_dump(mode="json")
-    result, resolved_date = await classifier.classify(email, _calendar)
+    result, resolved_date = await _classify_with_mode(email, _calendar)
     email.classification = result
     # ── Auto-create calendar event from meeting/action-required emails ───
     auto_event = classifier.extract_meeting_event(
@@ -835,8 +835,9 @@ async def draft_email_reply(
             subject_id=email.id,
         )
         return email.draft_reply.model_dump(mode="json")
-    result = await drafter.draft_reply(
+    result = await _draft_with_mode(
         email, email.classification,
+        calendar_events=_calendar,
         quality=quality,
     )
     email.draft_reply = result
@@ -1210,7 +1211,7 @@ async def classify_all(
         if account_id and email.account_id != account_id:
             continue
         if email.classification is None:
-            result, _resolved = await classifier.classify(email, _calendar)
+            result, _resolved = await _classify_with_mode(email, _calendar)
             email.classification = result
             safe_record_event(
                 "email.classified",
@@ -1624,6 +1625,103 @@ async def list_attachments(email_id: str) -> list[dict[str, Any]]:
             ) if att.stored_path else None,
         })
     return results
+# ---- AI Mode Endpoints -----------------------------------------------------
+
+
+@router.get("/settings/ai-mode")
+async def get_ai_mode() -> dict[str, Any]:
+    """Return the current AI mode."""
+    cfg = get_settings()
+    return {
+        "ai_mode": cfg.ai_mode,
+        "options": [
+            {
+                "value": "classic",
+                "label": "Classic AI",
+                "description": "Fast single-pass pipeline. Regex date resolution, deterministic conflicts, one LLM call.",
+                "badge": "Fast & Light",
+            },
+            {
+                "value": "ai_rich",
+                "label": "AI-Rich",
+                "description": "Multi-agent orchestration. Supervisor triage, calendar agent, enriched classification and drafting.",
+                "badge": "Deep & Orchestrated",
+            },
+        ],
+    }
+
+
+class AIModeSetting(BaseModel):
+    ai_mode: str
+
+
+@router.post("/settings/ai-mode")
+async def set_ai_mode(body: AIModeSetting) -> dict[str, Any]:
+    """Update the AI mode at runtime."""
+    from src.config import update_ai_mode
+    normalized = update_ai_mode(body.ai_mode)
+
+    # Also persist to .env for next server restart
+    _update_env_file("AI_MODE", normalized)
+
+    log.info("ai_mode_updated", extra={"ai_mode": normalized})
+    _log_activity("settings", f"AI mode switched to {normalized}")
+    return {"ai_mode": normalized, "status": "updated"}
+
+
+def _update_env_file(key: str, value: str) -> None:
+    """Update or append a key=value in the project's .env file."""
+    import os
+    import re as _re
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    pattern = _re.compile(rf"^{_re.escape(key)}\s*=.*$", _re.MULTILINE)
+    if pattern.search(content):
+        content = pattern.sub(f"{key}={value}", content)
+    else:
+        content = content.rstrip() + f"\n{key}={value}\n"
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+async def _classify_with_mode(
+    email: Email,
+    calendar_events: list[CalendarEvent],
+) -> tuple[Classification, Any]:
+    """Classify using the current AI mode setting."""
+    cfg = get_settings()
+    if cfg.ai_mode == "ai_rich":
+        from src.services.orchestrator import orchestrate_classify
+        return await orchestrate_classify(email, calendar_events)
+    return await classifier.classify(email, calendar_events, ai_mode="classic")
+
+
+async def _draft_with_mode(
+    email: Email,
+    classification: Classification,
+    *,
+    calendar_events: list[CalendarEvent] | None = None,
+    quality: str = "balanced",
+) -> DraftReply:
+    """Draft using the current AI mode setting."""
+    cfg = get_settings()
+    if cfg.ai_mode == "ai_rich":
+        from src.services.orchestrator import orchestrate_draft
+        return await orchestrate_draft(
+            email, classification,
+            calendar_events=calendar_events,
+            quality=quality,
+        )
+    return await drafter.draft_reply(
+        email, classification,
+        calendar_events=calendar_events,
+        quality=quality,
+    )
+
+
 # ---- Storage Endpoints -----------------------------------------------------
 @router.get("/storage/stats")
 async def get_storage_stats() -> dict[str, Any]:
