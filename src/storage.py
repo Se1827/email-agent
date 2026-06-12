@@ -197,6 +197,43 @@ def init_storage() -> None:
         _init_pgvector()
     log.info("storage_ready", extra={"storage_enabled": True})
 
+def store_sync_state(state: Any) -> StoredRecord | None:
+    """Persist the IMAP incremental sync state for a mailbox."""
+    payload = state.model_dump(mode="json") if hasattr(state, "model_dump") else dict(state)
+    record_id = f"{payload['account_id']}:{payload['mailbox']}"
+    return upsert_record(
+        "sync_state",
+        record_id=record_id,
+        payload=payload,
+        source="imap_sync",
+        metadata={
+            "account_id": payload["account_id"],
+            "mailbox": payload["mailbox"],
+            "uidvalidity": payload["uidvalidity"],
+        },
+    )
+
+
+def load_sync_state(account_id: str, mailbox: str) -> dict[str, Any] | None:
+    """Fetch the IMAP incremental sync state for a mailbox."""
+    record_id = f"{account_id}:{mailbox}"
+    return load_record_payload("sync_state", record_id)
+
+
+def clear_sync_state(account_id: str, mailbox: str) -> None:
+    """Delete the sync state for a mailbox (e.g. on UIDVALIDITY change)."""
+    if not storage_configured():
+        return
+    _require_psycopg()
+    record_id = f"{account_id}:{mailbox}"
+    with psycopg.connect(_database_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM encrypted_records WHERE record_type = 'sync_state' AND record_id = %s",
+                (record_id,)
+            )
+        conn.commit()
+
 
 def store_email(email: Any, *, source: str) -> StoredRecord | None:
     """Persist a full email payload encrypted, with efficient metadata."""
@@ -684,6 +721,10 @@ def upsert_record(
 
 def safe_store_email(email: Any, *, source: str) -> None:
     _enqueue(store_email, email, source=source)
+
+
+def safe_store_sync_state(state: Any) -> None:
+    _enqueue(store_sync_state, state)
 
 
 def safe_store_calendar_event(event: Any, *, source: str = "calendar") -> None:

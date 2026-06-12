@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from src.config import get_settings
 from src.connectors.mock import load_emails as load_mock_emails
-from src.connectors.imap import fetch_emails as fetch_imap_emails
+from src.connectors.imap import sync_mailbox, idle_loop
 from src.connectors.smtp import send_email as smtp_send_email
 from src.models.email import (
     AccountConfig,
@@ -24,6 +24,7 @@ from src.models.email import (
     DraftReply,
     Email,
     Notification,
+    SyncState,
 )
 from src.services import classifier, drafter
 from src.services.accounts import (
@@ -59,7 +60,101 @@ from src.storage import (
     safe_store_thread_state,
     storage_stats,
     store_email,
+    load_sync_state,
+    safe_store_sync_state,
+    clear_sync_state,
 )
+
+import threading
+
+_idle_threads: dict[str, threading.Thread] = {}
+
+def _ensure_idle_connection(account: AccountConfig, inbox: str) -> None:
+    if account.provider != "imap":
+        return
+    cfg = get_settings()
+    mailbox = account.imap_mailbox or cfg.imap_mailbox
+    thread_key = f"{account.id}:{mailbox}"
+    if thread_key in _idle_threads and _idle_threads[thread_key].is_alive():
+        return
+        
+    def _on_push_notification():
+        log.info("idle_push_received", extra={"account": account.id})
+        try:
+            new_emails = _sync_imap_mailbox(account, mailbox, inbox)
+            for email in new_emails:
+                _stamp_account_email(email, account, inbox)
+                _merge_source_email(email, source=email.account_id or cfg.email_source)
+        except Exception as exc:
+            log.error("idle_sync_failed", extra={"error": str(exc)})
+
+    host = account.imap_host or cfg.imap_host
+    port = account.imap_port or cfg.imap_port
+    username = account.imap_user or account.email or cfg.imap_user
+    password = account.imap_pass or cfg.imap_pass
+    
+    t = threading.Thread(
+        target=idle_loop,
+        args=(host, port, username, password),
+        kwargs={"mailbox": mailbox, "use_ssl": account.imap_use_ssl, "callback": _on_push_notification},
+        daemon=True,
+    )
+    t.start()
+    _idle_threads[thread_key] = t
+    log.info("idle_thread_started", extra={"account": account.id, "mailbox": mailbox})
+
+
+def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) -> list[Email]:
+    cfg = get_settings()
+    host = account.imap_host or cfg.imap_host
+    port = account.imap_port or cfg.imap_port
+    username = account.imap_user or account.email or cfg.imap_user
+    password = account.imap_pass or cfg.imap_pass
+    use_ssl = account.imap_use_ssl
+
+    raw_state = load_sync_state(account.id, imap_mailbox)
+    if raw_state:
+        state = SyncState.model_validate(raw_state)
+    else:
+        state = SyncState(account_id=account.id, mailbox=imap_mailbox, uidvalidity=0, last_uid=0, highestmodseq=0)
+
+    try:
+        emails, new_last_uid, new_highestmodseq, new_uidvalidity, flag_updates = sync_mailbox(
+            account_id=account.id,
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            mailbox=imap_mailbox,
+            use_ssl=use_ssl,
+            inbox=inbox,
+            last_uid=state.last_uid,
+            highestmodseq=state.highestmodseq,
+            uidvalidity=state.uidvalidity if state.uidvalidity else None,
+        )
+        
+        if flag_updates:
+            for f_uid, flags in flag_updates:
+                stable_id = f"{account.id}:{imap_mailbox}:{state.uidvalidity or new_uidvalidity}:{f_uid}"
+                if stable_id in _emails:
+                    _emails[stable_id].is_read = any(f.lower() == "\\seen" for f in flags)
+                    safe_store_email(_emails[stable_id], source="imap_sync")
+
+        if new_uidvalidity and new_uidvalidity != state.uidvalidity:
+            # uidvalidity changed or initialized
+            state.uidvalidity = new_uidvalidity
+            state.last_uid = new_last_uid
+            state.highestmodseq = new_highestmodseq
+            safe_store_sync_state(state)
+        elif new_last_uid > state.last_uid or new_highestmodseq > state.highestmodseq:
+            state.last_uid = new_last_uid
+            state.highestmodseq = new_highestmodseq
+            safe_store_sync_state(state)
+            
+        return emails
+    except Exception as exc:
+        log.warning(f"Failed to sync mailbox {imap_mailbox}", extra={"error": str(exc), "account": account.email})
+        return []
 
 log = logging.getLogger(__name__)
 
@@ -252,33 +347,15 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
             except Exception as exc:
                 log.exception("graph_email_parse_failed", extra={"msg_id": m.get("id"), "error": str(exc)})
         return emails
-    emails = fetch_imap_emails(
-        host=account.imap_host or cfg.imap_host,
-        port=account.imap_port or cfg.imap_port,
-        username=account.imap_user or account.email or cfg.imap_user,
-        password=account.imap_pass or cfg.imap_pass,
-        mailbox=account.imap_mailbox or cfg.imap_mailbox,
-        limit=cfg.imap_fetch_limit,
-        use_ssl=account.imap_use_ssl,
-        inbox=inbox,
-    )
+    emails = _sync_imap_mailbox(account, account.imap_mailbox or cfg.imap_mailbox, inbox)
     
     # Also attempt to fetch Sent emails so we see replies sent from official webmail/clients
-    try:
-        sent_mailbox = "[Gmail]/Sent Mail" if "gmail" in (account.imap_host or "").lower() else "Sent"
-        sent_emails = fetch_imap_emails(
-            host=account.imap_host or cfg.imap_host,
-            port=account.imap_port or cfg.imap_port,
-            username=account.imap_user or account.email or cfg.imap_user,
-            password=account.imap_pass or cfg.imap_pass,
-            mailbox=sent_mailbox,
-            limit=cfg.imap_fetch_limit,
-            use_ssl=account.imap_use_ssl,
-            inbox=inbox,
-        )
-        emails.extend(sent_emails)
-    except Exception as exc:
-        log.info("Failed to fetch sent mailbox", extra={"error": str(exc), "account": account.email})
+    sent_mailbox = "[Gmail]/Sent Mail" if "gmail" in (account.imap_host or "").lower() else "Sent"
+    sent_emails = _sync_imap_mailbox(account, sent_mailbox, inbox)
+    emails.extend(sent_emails)
+    
+    # Start IDLE connection to wait for push notifications
+    _ensure_idle_connection(account, inbox)
 
     # Ensure sent emails are marked as is_sent
     from_addr = account.email or cfg.imap_user
