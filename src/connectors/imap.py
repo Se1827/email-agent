@@ -158,6 +158,12 @@ def fetch_emails(
             raw_references_hdr = msg.get("References", "")
             ref_list = raw_references_hdr.split() if raw_references_hdr else []
 
+            # ── DIAGNOSTIC: log every email's raw Message-ID from IMAP ──
+            log.warning(
+                "IMAP_DIAG | subj=%s | from=%s | raw_Message-ID=%s | in_reply_to=%s | refs=%s",
+                subject[:60], sender, raw_msg_id, raw_in_reply_to, ref_list,
+            )
+
             # thread_id = first reference (thread root), or In-Reply-To,
             # or own Message-ID (standalone email).
             thread_id = (
