@@ -162,7 +162,59 @@ router = APIRouter()
 
 # ---- In-memory stores (initialised lazily) --------------------------------
 
-_emails: dict[str, Email] = {}
+class ThreadSafeDict(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lock = threading.Lock()
+        
+    def __getitem__(self, key):
+        with self.lock:
+            return super().__getitem__(key)
+            
+    def __setitem__(self, key, value):
+        with self.lock:
+            super().__setitem__(key, value)
+            
+    def __delitem__(self, key):
+        with self.lock:
+            super().__delitem__(key)
+            
+    def get(self, key, default=None):
+        with self.lock:
+            return super().get(key, default)
+            
+    def pop(self, key, default=None):
+        with self.lock:
+            if key in self:
+                return super().pop(key)
+            return default
+            
+    def clear(self):
+        with self.lock:
+            super().clear()
+            
+    def values(self):
+        with self.lock:
+            # Return a list to avoid RuntimeError: dictionary changed size during iteration
+            return list(super().values())
+            
+    def keys(self):
+        with self.lock:
+            return list(super().keys())
+            
+    def items(self):
+        with self.lock:
+            return list(super().items())
+            
+    def __contains__(self, key):
+        with self.lock:
+            return super().__contains__(key)
+            
+    def __len__(self):
+        with self.lock:
+            return super().__len__()
+
+_emails: ThreadSafeDict = ThreadSafeDict()
 _calendar: list[CalendarEvent] = []
 _notifications: list[Notification] = []
 _activity_log: list[dict[str, Any]] = []

@@ -140,7 +140,8 @@ def sync_mailbox(
         # Capabilities often change after login (e.g. CONDSTORE becomes available)
         conn.capability()
         
-        if "ENABLE" in conn.capabilities:
+        caps = [c.decode('ascii').upper() for c in conn.capabilities]
+        if "ENABLE" in caps:
             try:
                 conn._simple_command("ENABLE", "CONDSTORE")
             except Exception:
@@ -157,48 +158,53 @@ def sync_mailbox(
             last_uid = 0
             highestmodseq = 0
 
-        # Fetch all UIDs and filter them locally. This avoids compatibility issues 
-        # with legacy servers (like Elektrine) that fail to parse 'UID <X>:*'.
-        _status, data = conn.uid("search", "ALL")
-        all_uids_str = data[0].split() if data and data[0] else []
-        
-        new_uids = []
-        for uid_bytes in all_uids_str:
+        if last_uid == 0:
+            # First sync: only grab the most recent N
+            _status, data = conn.uid("search", "ALL")
+            all_uids_str = data[0].split() if data and data[0] else []
+            new_uids = all_uids_str[-50:]  # Limit to 50
+        else:
             try:
-                uid_int = int(uid_bytes.decode('ascii'))
-                if uid_int > last_uid:
-                    new_uids.append(uid_bytes)
-            except ValueError:
-                pass
-                
+                _status, data = conn.uid("search", "UID", f"{last_uid + 1}:*")
+                if _status != "OK":
+                    raise ValueError("search failed")
+                new_uids = data[0].split() if data and data[0] else []
+            except Exception:
+                # Fallback for servers that mis-parse UID ranges (e.g., Elektrine)
+                _status, data = conn.uid("search", "ALL")
+                all_uids_str = data[0].split() if data and data[0] else []
+                new_uids = []
+                for uid_bytes in all_uids_str:
+                    try:
+                        uid_int = int(uid_bytes.decode('ascii'))
+                        if uid_int > last_uid:
+                            new_uids.append(uid_bytes)
+                    except ValueError:
+                        pass
         emails: list[Email] = []
         
         new_last_uid = last_uid
         
         if new_uids:
-            # imaplib uid command returns a space-separated list of UIDs
-            for uid_bytes in new_uids:
-                uid_str = uid_bytes.decode('ascii')
-                try:
-                    uid_int = int(uid_str)
-                    new_last_uid = max(new_last_uid, uid_int)
-                except ValueError:
-                    continue
-                
-                _status, msg_data = conn.uid("fetch", uid_str, "(RFC822)")
-                if not msg_data or not msg_data[0]:
-                    continue
-                
-                # Extract raw bytes, handling tuple structure from fetch
-                raw_bytes = None
-                for part in msg_data:
-                    if isinstance(part, tuple):
-                        raw_bytes = part[1]
-                        break
-                
-                if not raw_bytes:
-                    continue
+            uid_set = b",".join(new_uids).decode('ascii')
+            _status, msg_data = conn.uid("fetch", uid_set, "(UID RFC822)")
+            
+            import re
+            messages_by_uid: dict[int, bytes] = {}
+            i = 0
+            while i < len(msg_data):
+                item = msg_data[i]
+                if isinstance(item, tuple):
+                    header_line = item[0].decode('ascii', errors='ignore')
+                    m = re.search(r'UID\s+(\d+)', header_line, re.IGNORECASE)
+                    if m:
+                        messages_by_uid[int(m.group(1))] = item[1]
+                    i += 1
+                else:
+                    i += 1
 
+            for uid_int, raw_bytes in messages_by_uid.items():
+                new_last_uid = max(new_last_uid, uid_int)
                 msg = email.message_from_bytes(raw_bytes)
 
                 sender_pairs = email.utils.getaddresses([msg.get("From", "")])
@@ -308,6 +314,9 @@ def sync_mailbox(
             pass
 
 
+import socket
+import time
+
 def idle_loop(
     host: str,
     port: int,
@@ -323,41 +332,51 @@ def idle_loop(
     Calls `callback()` whenever a notification is received.
     """
     klass = imaplib.IMAP4_SSL if use_ssl else imaplib.IMAP4
-    conn = klass(host, port)
-    try:
-        conn.login(username, password)
-        conn.select(mailbox, readonly=True)
-        
-        while True:
-            # Send IDLE command
-            tag = conn._new_tag()
-            conn.send(b"%s IDLE\r\n" % tag)
-            
-            # Wait for the continuation response (+)
-            line = conn.readline()
-            if not line.startswith(b"+"):
-                break
-                
-            # Block until we receive a line from the server (push notification)
-            line = conn.readline()
-            
-            # As soon as we receive something, break out of IDLE
-            conn.send(b"DONE\r\n")
-            
-            # Read until the tagged completion response
-            while True:
-                resp = conn.readline()
-                if resp.startswith(tag):
-                    break
-            
-            # Trigger the callback
-            if callback:
-                callback()
-                
-    except Exception as e:
-        log.error("idle_loop_error", extra={"error": str(e), "user": username})
-    finally:
+    while True:
         try:
-            conn.logout()
-        except Exception:
-            pass
+            conn = klass(host, port)
+            conn.login(username, password)
+            conn.select(mailbox, readonly=True)
+            conn.socket().settimeout(29 * 60)
+            
+            while True:
+                # Send IDLE command
+                tag = conn._new_tag()
+                conn.send(b"%s IDLE\r\n" % tag)
+                
+                # Wait for the continuation response (+)
+                line = conn.readline()
+                if not line.startswith(b"+"):
+                    break
+                    
+                # Block until we receive a line from the server (push notification)
+                try:
+                    line = conn.readline()
+                except socket.timeout:
+                    line = b""  # timed out, just re-issue IDLE
+                
+                # As soon as we receive something, break out of IDLE
+                conn.send(b"DONE\r\n")
+                
+                # Read until the tagged completion response
+                while True:
+                    resp = conn.readline()
+                    if resp.startswith(tag) or not resp:
+                        break
+                
+                # Trigger the callback
+                if line and callback:
+                    try:
+                        callback()
+                    except Exception as e:
+                        log.error("idle_callback_error", extra={"error": str(e)})
+                        
+        except Exception as e:
+            log.error("idle_loop_error", extra={"error": str(e), "user": username})
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+        
+        time.sleep(15)
