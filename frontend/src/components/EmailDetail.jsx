@@ -2,20 +2,21 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Shield, Sparkles, RotateCcw, Send, Zap, Clock, Gauge,
   ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check
+  ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check,
+  Paperclip, Download
 } from 'lucide-react';
 import {
   classifyEmail, draftReply, approveDraft, fetchEmail,
   markAsRead, fetchThread, sendReply
+  markAsRead, fetchThread, sendReply, getAttachmentUrl
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
 import './EmailDetail.css';
-
 const QUALITY_OPTIONS = [
     { value: 'quick', label: 'Quick', icon: Zap, desc: 'Fast, concise response' },
     { value: 'balanced', label: 'Balanced', icon: Gauge, desc: 'Optimal quality' },
     { value: 'thorough', label: 'Thorough', icon: Clock, desc: 'Detailed, comprehensive' },
 ];
-
 function formatPlainText(text) {
     if (!text) return null;
     try {
@@ -28,7 +29,6 @@ function formatPlainText(text) {
                 }
                 return part;
             });
-
             if (isQuote) {
                 return <blockquote key={i} className="email-quote">{elements}</blockquote>;
             }
@@ -38,16 +38,13 @@ function formatPlainText(text) {
         return <div style={{ color: 'red' }}>Format Text Error: {err.message}</div>;
     }
 }
-
 function BodyRenderer({ msg, whiteMode }) {
     const [iframeHeight, setIframeHeight] = useState('0px');
     const [showImages, setShowImages] = useState(false);
-
     const { safeHtml, hasBlockedImages, renderError } = useMemo(() => {
         try {
             if (!msg.html_body) return { safeHtml: null, hasBlockedImages: false, renderError: null };
             if (showImages) return { safeHtml: msg.html_body, hasBlockedImages: false, renderError: null };
-
             const lowerBody = msg.html_body.toLowerCase();
             const hasImg = lowerBody.includes('<img') && lowerBody.includes('http');
             const hasUrl = lowerBody.includes('url(') && lowerBody.includes('http');
@@ -55,10 +52,8 @@ function BodyRenderer({ msg, whiteMode }) {
             if (!hasImg && !hasUrl) {
                 return { safeHtml: msg.html_body, hasBlockedImages: false, renderError: null };
             }
-
             let modifiedHtml = msg.html_body;
             let blocked = false;
-
             if (hasUrl) {
                 const cleaned = modifiedHtml.replace(/url\((['"]?)(https?:\/\/[^'")\s]+)\1\)/gi, 'url()');
                 if (cleaned !== modifiedHtml) {
@@ -66,13 +61,11 @@ function BodyRenderer({ msg, whiteMode }) {
                     blocked = true;
                 }
             }
-
             const parser = new DOMParser();
             const doc = parser.parseFromString(modifiedHtml, 'text/html');
             
             const imgs = Array.from(doc.querySelectorAll('img'));
             const remoteImgs = imgs.filter(img => (img.src || '').toLowerCase().startsWith('http'));
-
             if (remoteImgs.length > 0) {
                 remoteImgs.forEach(img => {
                     img.removeAttribute('srcset');
@@ -82,7 +75,6 @@ function BodyRenderer({ msg, whiteMode }) {
                 });
                 blocked = true;
             }
-
             if (blocked) {
                 return { safeHtml: doc.documentElement.outerHTML, hasBlockedImages: true, renderError: null };
             }
@@ -92,11 +84,9 @@ function BodyRenderer({ msg, whiteMode }) {
             return { safeHtml: null, hasBlockedImages: false, renderError: err.message };
         }
     }, [msg.html_body, showImages]);
-
     if (renderError) {
         return <div style={{ color: 'red', padding: '20px' }}>BodyRenderer Error: {renderError}</div>;
     }
-
     if (msg.html_body) {
         return (
             <div className="email-body-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -166,17 +156,151 @@ function BodyRenderer({ msg, whiteMode }) {
             </div>
         );
     }
-
     return (
         <div className="email-body-text" style={whiteMode ? { backgroundColor: '#fff', color: '#000', padding: '16px', borderRadius: '8px' } : {}}>
             {formatPlainText(msg.body)}
         </div>
     );
 }
-
+// ---- Attachment helpers (appended) ----------------------------------------
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+    return `${size.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+}
+function getFileTypeInfo(filename, contentType) {
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    const ct = (contentType || '').toLowerCase();
+    if (ct.startsWith('image/') || ['png','jpg','jpeg','gif','bmp','webp','svg','ico','tiff'].includes(ext))
+        return { type: 'image', icon: '🖼️', color: '#8b5cf6', label: ext.toUpperCase() };
+    if (ct === 'application/pdf' || ext === 'pdf')
+        return { type: 'pdf', icon: '📄', color: '#ef4444', label: 'PDF' };
+    if (['doc','docx','odt','rtf'].includes(ext) || ct.includes('word'))
+        return { type: 'doc', icon: '📝', color: '#2563eb', label: ext.toUpperCase() };
+    if (['xls','xlsx','csv','ods'].includes(ext) || ct.includes('spreadsheet') || ct.includes('excel'))
+        return { type: 'sheet', icon: '📊', color: '#16a34a', label: ext.toUpperCase() };
+    if (['ppt','pptx','odp'].includes(ext) || ct.includes('presentation'))
+        return { type: 'slides', icon: '📽️', color: '#ea580c', label: ext.toUpperCase() };
+    if (['zip','rar','7z','tar','gz','bz2','xz'].includes(ext) || ct.includes('zip') || ct.includes('compressed'))
+        return { type: 'archive', icon: '📦', color: '#a16207', label: ext.toUpperCase() };
+    if (ct.startsWith('video/') || ['mp4','avi','mov','mkv','webm','wmv'].includes(ext))
+        return { type: 'video', icon: '🎬', color: '#7c3aed', label: ext.toUpperCase() };
+    if (ct.startsWith('audio/') || ['mp3','wav','ogg','flac','aac','m4a'].includes(ext))
+        return { type: 'audio', icon: '🎵', color: '#db2777', label: ext.toUpperCase() };
+    if (['js','ts','py','java','cpp','c','h','html','css','json','xml','yml','yaml','md','txt','log','sh','bat'].includes(ext) || ct.startsWith('text/'))
+        return { type: 'code', icon: '📋', color: '#6366f1', label: ext.toUpperCase() || 'TXT' };
+    return { type: 'file', icon: '📎', color: '#6b7280', label: ext.toUpperCase() || 'FILE' };
+}
+function AttachmentsBar({ attachments, emailId }) {
+    const [previewUrl, setPreviewUrl] = useState(null);
+    const [previewName, setPreviewName] = useState('');
+    if (!attachments || attachments.length === 0) return null;
+    const totalSize = attachments.reduce((sum, att) => sum + (att.size || 0), 0);
+    const handlePreview = (att) => {
+        const info = getFileTypeInfo(att.filename, att.content_type);
+        if (info.type === 'image' && att.stored_path) {
+            setPreviewUrl(getAttachmentUrl(emailId, att.filename));
+            setPreviewName(att.filename);
+        }
+    };
+    const handleDownloadAll = () => {
+        attachments.forEach((att, idx) => {
+            if (att.stored_path) {
+                setTimeout(() => {
+                    const a = document.createElement('a');
+                    a.href = getAttachmentUrl(emailId, att.filename);
+                    a.download = att.filename;
+                    a.click();
+                }, idx * 300);
+            }
+        });
+    };
+    return (
+        <>
+            <div className="attachments-section">
+                <div className="attachments-header">
+                    <div className="attachments-header-left">
+                        <Paperclip size={14} />
+                        <span className="attachments-count">
+                            {attachments.length} {attachments.length === 1 ? 'Attachment' : 'Attachments'}
+                        </span>
+                        {totalSize > 0 && (
+                            <span className="attachments-total-size">({formatFileSize(totalSize)})</span>
+                        )}
+                    </div>
+                    {attachments.length > 1 && (
+                        <button className="attachments-download-all" onClick={handleDownloadAll} title="Download all attachments">
+                            <Download size={13} /> Download all
+                        </button>
+                    )}
+                </div>
+                <div className="attachments-grid">
+                    {attachments.map((att, idx) => {
+                        const info = getFileTypeInfo(att.filename, att.content_type);
+                        const isPreviewable = info.type === 'image' && att.stored_path;
+                        const downloadUrl = att.stored_path ? getAttachmentUrl(emailId, att.filename) : null;
+                        return (
+                            <div key={idx} className="attachment-card" title={att.filename}>
+                                <div
+                                    className={`attachment-card-preview ${isPreviewable ? 'attachment-card-clickable' : ''}`}
+                                    style={{ '--att-color': info.color }}
+                                    onClick={() => isPreviewable && handlePreview(att)}
+                                >
+                                    {isPreviewable ? (
+                                        <img
+                                            src={getAttachmentUrl(emailId, att.filename)}
+                                            alt={att.filename}
+                                            className="attachment-thumbnail"
+                                            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                                        />
+                                    ) : null}
+                                    <div className="attachment-card-icon" style={{ display: isPreviewable ? 'none' : 'flex' }}>
+                                        <span className="attachment-emoji">{info.icon}</span>
+                                        <span className="attachment-type-label" style={{ color: info.color }}>{info.label}</span>
+                                    </div>
+                                </div>
+                                <div className="attachment-card-info">
+                                    <span className="attachment-card-name" title={att.filename}>{att.filename}</span>
+                                    <div className="attachment-card-meta">
+                                        {att.size > 0 && <span className="attachment-card-size">{formatFileSize(att.size)}</span>}
+                                        {downloadUrl ? (
+                                            <a className="attachment-card-download" href={downloadUrl} download={att.filename} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title={`Download ${att.filename}`}>
+                                                <Download size={12} />
+                                            </a>
+                                        ) : (
+                                            <span className="attachment-card-unavailable" title="File not saved to disk">—</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+            {previewUrl && (
+                <div className="attachment-lightbox" onClick={() => setPreviewUrl(null)}>
+                    <div className="attachment-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="attachment-lightbox-header">
+                            <span className="attachment-lightbox-name">{previewName}</span>
+                            <div className="attachment-lightbox-actions">
+                                <a className="btn btn-secondary attachment-lightbox-download" href={previewUrl} download={previewName} target="_blank" rel="noopener noreferrer">
+                                    <Download size={14} /> Download
+                                </a>
+                                <button className="btn btn-secondary" onClick={() => setPreviewUrl(null)}>✕ Close</button>
+                            </div>
+                        </div>
+                        <img src={previewUrl} alt={previewName} className="attachment-lightbox-img" />
+                    </div>
+                </div>
+            )}
+        </>
+    );
+}
 function ThreadMessage({ msg, isExpanded, onToggle, isLatest, whiteMode }) {
     const isSent = msg.is_sent;
-
     return (
         <div className={`thread-msg ${isExpanded ? 'thread-msg-expanded' : 'thread-msg-collapsed'} ${isSent ? 'thread-msg-sent' : ''}`}>
             <div className="thread-msg-header" onClick={onToggle}>
@@ -212,12 +336,12 @@ function ThreadMessage({ msg, isExpanded, onToggle, isLatest, whiteMode }) {
                         <span className="thread-msg-detail">{formatFullDate(msg.timestamp)}</span>
                     </div>
                     <BodyRenderer msg={msg} whiteMode={whiteMode} />
+                    <AttachmentsBar attachments={msg.attachments} emailId={msg.id} />
                 </div>
             )}
         </div>
     );
 }
-
 function EmailDetail({ email, onUpdate, onReload }) {
     const [busy, setBusy] = useState(null);
     const [toast, setToast] = useState(null);
@@ -225,12 +349,10 @@ function EmailDetail({ email, onUpdate, onReload }) {
     const [editedDraft, setEditedDraft] = useState(null);
     const [showQuality, setShowQuality] = useState(false);
     const [whiteMode, setWhiteMode] = useState(false);
-
     // Thread state
     const [thread, setThread] = useState([]);
     const [expandedMsgs, setExpandedMsgs] = useState(new Set());
     const [loadingThread, setLoadingThread] = useState(false);
-
     // Inline reply state
     const [showReply, setShowReply] = useState(false);
     const [replyAction, setReplyAction] = useState('reply');
@@ -239,9 +361,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
     const [replyBcc, setReplyBcc] = useState('');
     const [replyBody, setReplyBody] = useState('');
     const [sendingReply, setSendingReply] = useState(false);
-
     const replyRef = useRef(null);
-
     const openReply = (action) => {
         setReplyAction(action);
         
@@ -267,7 +387,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
         setShowReply(true);
         setTimeout(() => replyRef.current?.focus(), 100);
     };
-
     // Load thread when email changes
     useEffect(() => {
         if (!email) return;
@@ -285,14 +404,12 @@ function EmailDetail({ email, onUpdate, onReload }) {
         setShowReply(false);
         setReplyBody('');
     }, [email?.id]);
-
     // Auto mark-as-read (must be before early return to satisfy Rules of Hooks)
     useEffect(() => {
         if (email && !email.is_read) {
             markAsRead(email.id).catch(() => {});
         }
     }, [email?.id, email?.is_read]);
-
     if (!email) {
         return (
             <div className="email-detail email-detail-empty" id="email-detail-empty">
@@ -304,12 +421,10 @@ function EmailDetail({ email, onUpdate, onReload }) {
             </div>
         );
     }
-
     const showToast = (msg, type = 'success') => {
         setToast({ msg, type });
         setTimeout(() => setToast(null), 3500);
     };
-
     const toggleMsg = (msgId) => {
         setExpandedMsgs(prev => {
             const next = new Set(prev);
@@ -318,11 +433,9 @@ function EmailDetail({ email, onUpdate, onReload }) {
             return next;
         });
     };
-
     const isOutlook = email.account_id === 'outlook';
     // Outlook emails use the raw Graph ID (strip 'outlook:' prefix)
     const graphId = isOutlook ? email.id.replace(/^outlook:/, '') : null;
-
     const handleClassify = async () => {
         setBusy('classify');
         try {
@@ -348,7 +461,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
             setBusy(null);
         }
     };
-
     const handleDraft = async () => {
         setBusy('draft');
         try {
@@ -390,7 +502,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
             setBusy(null);
         }
     };
-
     const handleApprove = async () => {
         setBusy('approve');
         try {
@@ -398,7 +509,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
             const sortedThread = [...thread].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             const latestReceived = sortedThread.reverse().find(m => !m.is_sent);
             const replyTargetId = latestReceived?.id || email.id;
-
             const result = await approveDraft(replyTargetId);
             const updated = await fetchEmail(email.id);
             onUpdate(updated);
@@ -419,7 +529,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
             setBusy(null);
         }
     };
-
     const handleSendReply = async () => {
         if (!replyBody.trim() || busy) return;
         setBusy('reply');
@@ -428,11 +537,9 @@ function EmailDetail({ email, onUpdate, onReload }) {
             const sortedThread = [...thread].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             const latestReceived = sortedThread.reverse().find(m => !m.is_sent);
             const replyTargetId = latestReceived?.id || email.id;
-
             const toList = replyTo.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
             const ccList = replyCc.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
             const bccList = replyBcc.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
-
             await sendReply(replyTargetId, replyBody, toList, ccList, bccList, replyAction);
             setReplyBody('');
             setShowReply(false);
@@ -450,21 +557,17 @@ function EmailDetail({ email, onUpdate, onReload }) {
             setBusy(null);
         }
     };
-
     const cls = email.classification;
     const draft = email.draft_reply;
     const threadCount = thread.length;
     const hasThread = threadCount > 1;
-
     // Collect unique participants
     const participants = [...new Set(thread.flatMap(m => [m.sender, ...(m.recipients || [])]))];
-
     return (
         <div className="email-detail animate-fade-in" id="email-detail">
             {toast && (
                 <div className={`toast toast-${toast.type}`}>{toast.msg}</div>
             )}
-
             {/* Thread Header */}
             <div className="detail-header">
                 <h2 className="detail-subject">{email.subject}</h2>
@@ -491,7 +594,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
                         )}
                     </div>
                 </div>
-
                 {cls && (
                     <div className="detail-classification">
                         <span className={`priority-badge priority-${cls.priority}`}>
@@ -518,7 +620,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
                     </div>
                 )}
             </div>
-
             {/* Actions */}
             <div className="detail-actions">
                 <button className="btn btn-action" onClick={handleClassify} disabled={!!busy} id="btn-classify">
@@ -604,7 +705,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
                     </button>
                 </div>
             </div>
-
             {/* Thread / Conversation */}
             <div className="thread-container">
                 {loadingThread ? (
@@ -646,9 +746,9 @@ function EmailDetail({ email, onUpdate, onReload }) {
                             </div>
                         </div>
                         <BodyRenderer msg={email} whiteMode={whiteMode} />
+                        <AttachmentsBar attachments={email.attachments} emailId={email.id} />
                     </div>
                 )}
-
                 {/* AI Draft (shown if draft exists but reply not open) */}
                 {draft && !showReply && (
                     <div className="detail-draft animate-slide-up">
@@ -679,7 +779,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
                         </div>
                     </div>
                 )}
-
                 {/* Inline Reply Composer */}
                 {showReply && (
                     <div className="inline-reply animate-slide-up">
@@ -749,5 +848,4 @@ function EmailDetail({ email, onUpdate, onReload }) {
         </div>
     );
 }
-
 export default EmailDetail;
