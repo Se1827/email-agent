@@ -1,4 +1,3 @@
-import { Star, MessageSquare } from 'lucide-react';
 import { Star, MessageSquare, Paperclip } from 'lucide-react';
 import { formatDate, formatSender, senderColor } from '../utils';
 import { toggleStar, fetchEmail } from '../api';

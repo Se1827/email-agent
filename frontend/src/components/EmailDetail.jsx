@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Shield, Sparkles, RotateCcw, Send, Zap, Clock, Gauge,
-  ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check
   ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check,
   Paperclip, Download
 } from 'lucide-react';
 import {
   classifyEmail, draftReply, approveDraft, fetchEmail,
-  markAsRead, fetchThread, sendReply
   markAsRead, fetchThread, sendReply, getAttachmentUrl
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
