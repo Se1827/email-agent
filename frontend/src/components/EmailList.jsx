@@ -1,8 +1,8 @@
 import { Star, MessageSquare } from 'lucide-react';
+import { Star, MessageSquare, Paperclip } from 'lucide-react';
 import { formatDate, formatSender, senderColor } from '../utils';
 import { toggleStar, fetchEmail } from '../api';
 import './EmailList.css';
-
 function normalizeSubject(subject) {
     if (!subject) return "";
     let s = subject.trim();
@@ -13,7 +13,6 @@ function normalizeSubject(subject) {
     }
     return s.toLowerCase();
 }
-
 /**
  * Group emails by thread_id and normalized subject so we show one row per conversation.
  * Each group shows the latest message's preview and the count of messages.
@@ -28,7 +27,6 @@ function groupByThread(emails) {
         }
         tempGroups.get(tid).push(email);
     }
-
     // Second pass: Unify groups by normalized subject
     const subjectToGroup = new Map();
     for (const [tid, groupEmails] of tempGroups) {
@@ -44,7 +42,6 @@ function groupByThread(emails) {
         }
         subjectToGroup.get(groupKey).push(...groupEmails);
     }
-
     const groups = [];
     for (const [groupKey, msgs] of subjectToGroup) {
         // Sort by timestamp descending — latest first
@@ -54,7 +51,6 @@ function groupByThread(emails) {
         const participants = [...new Set(msgs.flatMap(m => [m.sender]))];
         // Use the classification of any email in the thread (prefer classified)
         const classified = msgs.find(m => m.classification);
-
         groups.push({
             id: groupKey,
             latestEmail: latest,
@@ -65,13 +61,12 @@ function groupByThread(emails) {
             isUnread: msgs.some(m => !m.is_read && !m.classification),
             hasDraft: msgs.some(m => m.draft_reply),
             hasSent: msgs.some(m => m.is_sent),
+            hasAttachments: msgs.some(m => m.attachments && m.attachments.length > 0),
             allEmails: msgs,
         });
     }
-
     return groups;
 }
-
 function EmailList({ emails, selected, onSelect, loading }) {
     if (loading) {
         return (
@@ -84,7 +79,6 @@ function EmailList({ emails, selected, onSelect, loading }) {
             </div>
         );
     }
-
     if (emails.length === 0) {
         return (
             <div className="email-list">
@@ -92,7 +86,6 @@ function EmailList({ emails, selected, onSelect, loading }) {
             </div>
         );
     }
-
     const handleStar = async (e, email) => {
         e.stopPropagation();
         try {
@@ -101,9 +94,7 @@ function EmailList({ emails, selected, onSelect, loading }) {
             onSelect(selected?.id === email.id ? updated : selected);
         } catch (_) { /* ignore */ }
     };
-
     const threadGroups = groupByThread(emails);
-
     return (
         <div className="email-list" id="email-list">
             <div className="email-list-header">
@@ -123,7 +114,6 @@ function EmailList({ emails, selected, onSelect, loading }) {
                         group.allEmails.some(m => m.id === selected.id)
                     );
                     const isUnread = group.isUnread;
-
                     return (
                         <div
                             key={group.id}
@@ -151,7 +141,6 @@ function EmailList({ emails, selected, onSelect, loading }) {
                                     {formatSender(email.sender).charAt(0).toUpperCase()}
                                 </div>
                             )}
-
                             <div className="email-row-content">
                                 <div className="email-row-top">
                                     <span className="email-sender">
@@ -165,6 +154,11 @@ function EmailList({ emails, selected, onSelect, loading }) {
                                             <span className="thread-count-pip">
                                                 <MessageSquare size={10} />
                                                 {group.count}
+                                            </span>
+                                        )}
+                                        {group.hasAttachments && (
+                                            <span className="attachment-pip" title="Has attachments">
+                                                <Paperclip size={11} />
                                             </span>
                                         )}
                                         {cls && <span className={`priority-pip priority-${cls.priority}`} />}
@@ -188,7 +182,6 @@ function EmailList({ emails, selected, onSelect, loading }) {
                                     </div>
                                 </div>
                             </div>
-
                             <button
                                 className={`email-star-btn ${group.isStarred ? 'starred' : ''}`}
                                 onClick={(e) => handleStar(e, email)}
@@ -203,5 +196,4 @@ function EmailList({ emails, selected, onSelect, loading }) {
         </div>
     );
 }
-
 export default EmailList;
