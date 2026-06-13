@@ -7,6 +7,31 @@ import ComposeModal from '../components/ComposeModal';
 import { fetchAccounts, fetchEmails, classifyAll, refreshInbox } from '../api';
 import './InboxPage.css';
 
+/* ── Outlook / Microsoft Graph helpers ─────────────────────────── */
+const OUTLOOK_ACCOUNT = {
+  id: 'outlook',
+  name: 'Outlook',
+  email: 'Microsoft Graph',
+  provider: 'graph',
+  color: '#6366f1',
+  is_active: true,
+};
+
+async function fetchGraphEmails() {
+  const res = await fetch('/api/graph/mail/inbox?top=50', {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  // Prefix IDs so they don't collide with regular emails
+  return (data.messages || []).map((m) => ({
+    ...m,
+    id: m.id.startsWith('outlook:') ? m.id : `outlook:${m.id}`,
+    account_id: 'outlook',
+    thread_id: m.thread_id ? (m.thread_id.startsWith('outlook:') ? m.thread_id : `outlook:${m.thread_id}`) : undefined,
+  }));
+}
+
 function InboxPage() {
   const [emails, setEmails] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -25,8 +50,22 @@ function InboxPage() {
   const loadEmails = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const data = await fetchEmails(selectedAccountId === 'all' ? null : selectedAccountId);
-      setEmails(data);
+      if (selectedAccountId === 'outlook') {
+        // Outlook-only view: fetch from Graph endpoint
+        const graphData = await fetchGraphEmails();
+        setEmails(graphData);
+      } else if (selectedAccountId === 'all') {
+        // All accounts: merge regular + Outlook
+        const [regularData, graphData] = await Promise.all([
+          fetchEmails(null).catch(() => []),
+          fetchGraphEmails().catch(() => []),
+        ]);
+        setEmails([...regularData, ...graphData]);
+      } else {
+        // Specific non-Outlook account
+        const data = await fetchEmails(selectedAccountId);
+        setEmails(data);
+      }
       setError(null);
     } catch (err) {
       if (emails.length === 0) {
@@ -52,12 +91,14 @@ function InboxPage() {
 
   useEffect(() => {
     fetchAccounts().then((data) => {
-      setAccounts(data);
-      if (selectedAccountId !== 'all' && !data.some((account) => account.id === selectedAccountId)) {
+      // Append the virtual Outlook account
+      const allAccounts = [...data, OUTLOOK_ACCOUNT];
+      setAccounts(allAccounts);
+      if (selectedAccountId !== 'all' && selectedAccountId !== 'outlook' && !data.some((account) => account.id === selectedAccountId)) {
         setSelectedAccountId('all');
         localStorage.setItem('selectedAccountId', 'all');
       }
-    }).catch(() => setAccounts([]));
+    }).catch(() => setAccounts([OUTLOOK_ACCOUNT]));
   }, [selectedAccountId]);
 
   const chooseAccount = (accountId) => {
@@ -156,7 +197,9 @@ function InboxPage() {
           className="account-switcher-avatar"
           style={{ background: selectedAccount?.color || 'var(--gradient-accent)' }}
         >
-          {selectedAccount ? selectedAccount.name.charAt(0).toUpperCase() : 'A'}
+          {selectedAccount?.provider === 'graph'
+            ? <svg width="13" height="13" viewBox="0 0 23 23" fill="none"><path d="M1 1h10v10H1z" fill="#f25022"/><path d="M12 1h10v10H12z" fill="#7fba00"/><path d="M1 12h10v10H1z" fill="#00a4ef"/><path d="M12 12h10v10H12z" fill="#ffb900"/></svg>
+            : selectedAccount ? selectedAccount.name.charAt(0).toUpperCase() : 'A'}
         </span>
         <ChevronDown size={13} />
       </button>
@@ -178,7 +221,13 @@ function InboxPage() {
               className={`account-switcher-item ${selectedAccountId === account.id ? 'active' : ''}`}
               onClick={() => chooseAccount(account.id)}
             >
-              <span className="account-switcher-dot" style={{ background: account.color }} />
+              {account.provider === 'graph' ? (
+                <span className="account-switcher-dot" style={{ background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="10" height="10" viewBox="0 0 23 23" fill="none"><path d="M1 1h10v10H1z" fill="#f25022"/><path d="M12 1h10v10H12z" fill="#7fba00"/><path d="M1 12h10v10H1z" fill="#00a4ef"/><path d="M12 12h10v10H12z" fill="#ffb900"/></svg>
+                </span>
+              ) : (
+                <span className="account-switcher-dot" style={{ background: account.color }} />
+              )}
               <span>
                 <strong>{account.name}</strong>
                 <small>{account.email}</small>

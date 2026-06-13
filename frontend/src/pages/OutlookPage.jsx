@@ -20,7 +20,6 @@ async function gfetch(path, opts = {}) {
 }
 
 const TABS = [
-  { id: 'mail',     label: 'Mail',      icon: Mail },
   { id: 'calendar', label: 'Calendar',  icon: Calendar },
   { id: 'contacts', label: 'Contacts',  icon: Users },
   { id: 'profile',  label: 'Profile',   icon: User },
@@ -919,7 +918,7 @@ function TeamsTab() {
 
 /* ─── Main OutlookPage ───────────────────────────────────────────────────── */
 export default function OutlookPage() {
-  const [tab, setTab] = useState('mail');
+  const [tab, setTab] = useState('calendar');
   const [graphStatus, setGraphStatus] = useState(null);
 
   useEffect(() => {
@@ -928,7 +927,6 @@ export default function OutlookPage() {
 
   const renderTab = () => {
     switch (tab) {
-      case 'mail':     return <MailTab />;
       case 'calendar': return <CalendarTab />;
       case 'contacts': return <ContactsTab />;
       case 'files':    return <FilesTab />;
@@ -949,7 +947,7 @@ export default function OutlookPage() {
           </div>
           <div>
             <h1 className="ol-title">Microsoft Graph</h1>
-            <p className="ol-subtitle">Outlook · Teams · OneDrive · Contacts</p>
+            <p className="ol-subtitle">Calendar · Teams · OneDrive · Contacts</p>
           </div>
         </div>
         {graphStatus && <StatusBadge mode={graphStatus.mode} />}
