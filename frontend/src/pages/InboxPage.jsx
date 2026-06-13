@@ -24,16 +24,20 @@ function InboxPage() {
 
   const loadEmails = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
-    setError(null);
     try {
       const data = await fetchEmails(selectedAccountId === 'all' ? null : selectedAccountId);
       setEmails(data);
+      setError(null);
     } catch (err) {
-      setError('Cannot reach the API server. Is it running on :8000?');
+      if (emails.length === 0) {
+        setError('Cannot reach the API server. Is it running on :8000?');
+      } else {
+        console.error('API server unreachable, preserving existing session data:', err);
+      }
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [selectedAccountId]);
+  }, [selectedAccountId, emails.length]);
 
   useEffect(() => {
     loadEmails(true);
