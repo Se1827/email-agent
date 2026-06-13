@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from pathlib import Path
+import threading
 
 from src.api import routes
-from src.models.email import Classification, Email
+from src.models.email import Classification, Email, AccountConfig
 
 
 def _email(
@@ -39,6 +40,7 @@ def _classification() -> Classification:
 def _patch_loader_deps(monkeypatch, *, db_payloads, source_emails):
     routes._emails.clear()
     routes._calendar.clear()
+    routes._is_loaded = False
     settings = SimpleNamespace(
         email_load_mode="db_then_source",
         email_source="imap",
@@ -55,36 +57,39 @@ def _patch_loader_deps(monkeypatch, *, db_payloads, source_emails):
     monkeypatch.setattr(routes, "safe_store_calendar_event", lambda event, source="mock": None)
     monkeypatch.setattr(routes, "load_events", lambda path: [])
     monkeypatch.setattr(routes, "safe_record_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(threading.Thread, "start", threading.Thread.run)
+    dummy_acc = AccountConfig(id="mock", name="Mock", email="mock@example.com", provider="mock", is_active=True)
+    monkeypatch.setattr(routes, "load_accounts", lambda path: [dummy_acc])
 
 
 def test_db_then_source_keeps_db_only_email_visible(monkeypatch):
-    cached = _email("cached", classification=_classification())
+    cached = _email("mock:cached", classification=_classification())
     _patch_loader_deps(monkeypatch, db_payloads=[cached.model_dump(mode="json")], source_emails=[])
 
     routes._ensure_loaded()
 
-    assert routes._emails["cached"].classification is not None
-    assert routes._emails["cached"].storage_origin == "db"
+    assert routes._emails["mock:cached"].classification is not None
+    assert routes._emails["mock:cached"].storage_origin == "db"
 
 
 def test_db_then_source_keeps_cached_state_for_unchanged_source_email(monkeypatch):
-    cached = _email("same", body="unchanged", classification=_classification())
-    fresh = _email("same", body="unchanged")
+    cached = _email("mock:same", body="unchanged", classification=_classification())
+    fresh = _email("mock:same", body="unchanged")
     _patch_loader_deps(monkeypatch, db_payloads=[cached.model_dump(mode="json")], source_emails=[fresh])
 
     routes._ensure_loaded()
 
-    assert routes._emails["same"].classification == cached.classification
-    assert routes._emails["same"].storage_origin == "source+cache"
+    assert routes._emails["mock:same"].classification == cached.classification
+    assert routes._emails["mock:same"].storage_origin == "source+cache"
 
 
 def test_db_then_source_clears_cached_state_for_changed_source_email(monkeypatch):
-    cached = _email("same", body="old", classification=_classification())
-    fresh = _email("same", body="new")
+    cached = _email("mock:same", body="old", classification=_classification())
+    fresh = _email("mock:same", body="new")
     _patch_loader_deps(monkeypatch, db_payloads=[cached.model_dump(mode="json")], source_emails=[fresh])
 
     routes._ensure_loaded()
 
-    assert routes._emails["same"].body == "new"
-    assert routes._emails["same"].classification is None
-    assert routes._emails["same"].storage_origin == "source-updated"
+    assert routes._emails["mock:same"].body == "new"
+    assert routes._emails["mock:same"].classification is None
+    assert routes._emails["mock:same"].storage_origin == "source-updated"

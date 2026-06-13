@@ -68,9 +68,9 @@ class TestClassify:
 
         monkeypatch.setattr("src.services.classifier.llm.chat", mock_chat)
 
-        result = await classify(sample_email)
-        assert result.priority == Priority.HIGH
-        assert result.category == Category.DEADLINE
+        classification, _ = await classify(sample_email)
+        assert classification.priority == Priority.HIGH
+        assert classification.category == Category.DEADLINE
 
     @pytest.mark.asyncio
     async def test_classify_masks_pii_before_llm(self, monkeypatch):
