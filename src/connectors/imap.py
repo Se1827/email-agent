@@ -34,33 +34,59 @@ def _decode_header(raw: str | None) -> str:
     return " ".join(decoded)
 
 
-def _extract_body(msg: Message) -> str:
-    """Walk a MIME message and return the best plain-text body."""
-    # Prefer text/plain, fall back to text/html stripped of tags.
+def _extract_bodies(msg: Message) -> tuple[str, str | None]:
+    """Walk a MIME message and return (plain_text, html_body)."""
+    plain_text = ""
+    html_body = None
+    cid_map: dict[str, str] = {}
+
     if msg.is_multipart():
+        for part in msg.walk():
+            content_id = part.get("Content-ID")
+            if content_id:
+                content_id = content_id.strip("<>")
+                maintype = part.get_content_maintype()
+                if maintype == "image":
+                    payload = part.get_payload(decode=True)
+                    # Limit to 2MB to prevent memory bloat
+                    if payload and len(payload) < 2 * 1024 * 1024:
+                        import base64
+                        b64 = base64.b64encode(payload).decode('ascii')
+                        mime = part.get_content_type()
+                        cid_map[content_id] = f"data:{mime};base64,{b64}"
+
         for part in msg.walk():
             content_type = part.get_content_type()
             disposition = str(part.get("Content-Disposition", ""))
-            if "attachment" in disposition:
+            if "attachment" in disposition and not part.get("Content-ID"):
                 continue
-            if content_type == "text/plain":
+
+            if content_type == "text/plain" and not plain_text:
                 payload = part.get_payload(decode=True)
                 if payload:
                     charset = part.get_content_charset() or "utf-8"
-                    return payload.decode(charset, errors="replace")
-        # No text/plain found, try text/html as a last resort.
-        for part in msg.walk():
-            if part.get_content_type() == "text/html":
+                    plain_text = payload.decode(charset, errors="replace")
+            elif content_type == "text/html" and not html_body:
                 payload = part.get_payload(decode=True)
                 if payload:
                     charset = part.get_content_charset() or "utf-8"
-                    return payload.decode(charset, errors="replace")
+                    html_body = payload.decode(charset, errors="replace")
     else:
+        content_type = msg.get_content_type()
         payload = msg.get_payload(decode=True)
         if payload:
             charset = msg.get_content_charset() or "utf-8"
-            return payload.decode(charset, errors="replace")
-    return ""
+            decoded = payload.decode(charset, errors="replace")
+            if content_type == "text/html":
+                html_body = decoded
+            else:
+                plain_text = decoded
+
+    if html_body and cid_map:
+        for cid, data_uri in cid_map.items():
+            html_body = html_body.replace(f"cid:{cid}", data_uri)
+
+    return plain_text, html_body
 
 
 def _parse_recipients(msg: Message) -> list[str]:
@@ -233,7 +259,7 @@ def sync_mailbox(
 
                 subject = _decode_header(msg.get("Subject"))
                 date = _parse_date(msg)
-                body = _extract_body(msg)
+                body, html_body = _extract_bodies(msg)
                 recipients = _parse_recipients(msg)
 
                 # Extract CC addresses
@@ -268,6 +294,7 @@ def sync_mailbox(
                     cc=cc_addrs,
                     subject=subject,
                     body=body[:5000],
+                    html_body=html_body,
                     timestamp=date,
                     thread_id=thread_id,
                     message_id=raw_msg_id or None,

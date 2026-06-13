@@ -16,7 +16,73 @@ const QUALITY_OPTIONS = [
     { value: 'thorough', label: 'Thorough', icon: Clock, desc: 'Detailed, comprehensive' },
 ];
 
-function ThreadMessage({ msg, isExpanded, onToggle, isLatest }) {
+function formatPlainText(text) {
+    if (!text) return null;
+    const lines = text.split('\n');
+    return lines.map((line, i) => {
+        if (line.trim().startsWith('>')) {
+            return <blockquote key={i} className="email-quote">{line}</blockquote>;
+        }
+        return <span key={i}>{line}<br /></span>;
+    });
+}
+
+function BodyRenderer({ msg, whiteMode }) {
+    const [iframeHeight, setIframeHeight] = useState('0px');
+
+    if (msg.html_body) {
+        return (
+            <iframe
+                key={whiteMode ? 'white' : 'dark'}
+                title={`Email Body ${msg.id}`}
+                srcDoc={msg.html_body}
+                sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+                className="email-iframe"
+                style={{ width: '100%', height: iframeHeight, border: 'none', overflow: 'hidden', backgroundColor: whiteMode ? '#fff' : 'transparent', borderRadius: whiteMode ? '8px' : '0' }}
+                onLoad={(e) => {
+                    const doc = e.target.contentWindow?.document;
+                    if (!doc) return;
+                    
+                    const style = doc.createElement('style');
+                    if (whiteMode) {
+                        style.textContent = `
+                            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; padding: 16px; margin: 0; word-wrap: break-word; color: #000; background: #fff; }
+                            a { color: #0000EE; }
+                        `;
+                    } else {
+                        style.textContent = `
+                            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; padding: 0; margin: 0; word-wrap: break-word; color: #333; }
+                            @media (prefers-color-scheme: dark) {
+                               body { color: #e5e7eb; }
+                               a { color: #60a5fa; }
+                            }
+                        `;
+                    }
+                    doc.head.appendChild(style);
+                    
+                    const resize = () => {
+                        setIframeHeight((doc.documentElement.scrollHeight + 20) + 'px');
+                    };
+                    resize();
+                    setTimeout(resize, 100);
+                    setTimeout(resize, 500);
+                    
+                    try {
+                        new MutationObserver(resize).observe(doc.body, { childList: true, subtree: true, attributes: true });
+                    } catch (err) {}
+                }}
+            />
+        );
+    }
+
+    return (
+        <div className="email-body-text" style={whiteMode ? { backgroundColor: '#fff', color: '#000', padding: '16px', borderRadius: '8px' } : {}}>
+            {formatPlainText(msg.body)}
+        </div>
+    );
+}
+
+function ThreadMessage({ msg, isExpanded, onToggle, isLatest, whiteMode }) {
     const isSent = msg.is_sent;
 
     return (
@@ -53,7 +119,7 @@ function ThreadMessage({ msg, isExpanded, onToggle, isLatest }) {
                         )}
                         <span className="thread-msg-detail">{formatFullDate(msg.timestamp)}</span>
                     </div>
-                    <pre className="email-body-text">{msg.body}</pre>
+                    <BodyRenderer msg={msg} whiteMode={whiteMode} />
                 </div>
             )}
         </div>
@@ -66,6 +132,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
     const [draftQuality, setDraftQuality] = useState('balanced');
     const [editedDraft, setEditedDraft] = useState(null);
     const [showQuality, setShowQuality] = useState(false);
+    const [whiteMode, setWhiteMode] = useState(false);
 
     // Thread state
     const [thread, setThread] = useState([]);
@@ -332,6 +399,9 @@ function EmailDetail({ email, onUpdate, onReload }) {
                         <><Sparkles size={14} /> {cls ? 'Re-classify' : 'Classify'}</>
                     )}
                 </button>
+                <button className={`btn btn-action ${whiteMode ? 'active' : ''}`} onClick={() => setWhiteMode(!whiteMode)}>
+                    View in {whiteMode ? 'Dark' : 'White'} Mode
+                </button>
                 {cls && (
                     <>
                         <div className="quality-selector-wrapper">
@@ -423,6 +493,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                 isExpanded={expandedMsgs.has(msg.id)}
                                 onToggle={() => toggleMsg(msg.id)}
                                 isLatest={idx === thread.length - 1}
+                                whiteMode={whiteMode}
                             />
                         ))}
                     </div>
@@ -445,7 +516,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                 <span className="detail-date">{formatFullDate(email.timestamp)}</span>
                             </div>
                         </div>
-                        <pre className="email-body-text">{email.body}</pre>
+                        <BodyRenderer msg={email} whiteMode={whiteMode} />
                     </div>
                 )}
 

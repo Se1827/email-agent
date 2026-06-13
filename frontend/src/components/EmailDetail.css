@@ -426,6 +426,14 @@
   word-wrap: break-word;
 }
 
+.email-quote {
+  margin: 4px 0 4px 8px;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 /* ---- Draft ---- */
 .detail-draft {
   margin-top: var(--space-4);

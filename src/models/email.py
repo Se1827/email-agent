@@ -51,6 +51,7 @@ class Email(BaseModel):
     bcc: list[str] = Field(default_factory=list)
     subject: str
     body: str
+    html_body: Optional[str] = None
     timestamp: datetime
     thread_id: Optional[str] = None
 
