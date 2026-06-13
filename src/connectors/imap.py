@@ -14,8 +14,9 @@ import imaplib
 import logging
 from datetime import datetime, timezone
 from email.message import Message
+from pathlib import Path
 
-from src.models.email import Email
+from src.models.email import Attachment, Email
 
 log = logging.getLogger(__name__)
 
@@ -34,59 +35,33 @@ def _decode_header(raw: str | None) -> str:
     return " ".join(decoded)
 
 
-def _extract_bodies(msg: Message) -> tuple[str, str | None]:
-    """Walk a MIME message and return (plain_text, html_body)."""
-    plain_text = ""
-    html_body = None
-    cid_map: dict[str, str] = {}
-
+def _extract_body(msg: Message) -> str:
+    """Walk a MIME message and return the best plain-text body."""
+    # Prefer text/plain, fall back to text/html stripped of tags.
     if msg.is_multipart():
-        for part in msg.walk():
-            content_id = part.get("Content-ID")
-            if content_id:
-                content_id = content_id.strip("<>")
-                maintype = part.get_content_maintype()
-                if maintype == "image":
-                    payload = part.get_payload(decode=True)
-                    # Limit to 2MB to prevent memory bloat
-                    if payload and len(payload) < 2 * 1024 * 1024:
-                        import base64
-                        b64 = base64.b64encode(payload).decode('ascii')
-                        mime = part.get_content_type()
-                        cid_map[content_id] = f"data:{mime};base64,{b64}"
-
         for part in msg.walk():
             content_type = part.get_content_type()
             disposition = str(part.get("Content-Disposition", ""))
-            if "attachment" in disposition and not part.get("Content-ID"):
+            if "attachment" in disposition:
                 continue
-
-            if content_type == "text/plain" and not plain_text:
+            if content_type == "text/plain":
                 payload = part.get_payload(decode=True)
                 if payload:
                     charset = part.get_content_charset() or "utf-8"
-                    plain_text = payload.decode(charset, errors="replace")
-            elif content_type == "text/html" and not html_body:
+                    return payload.decode(charset, errors="replace")
+        # No text/plain found, try text/html as a last resort.
+        for part in msg.walk():
+            if part.get_content_type() == "text/html":
                 payload = part.get_payload(decode=True)
                 if payload:
                     charset = part.get_content_charset() or "utf-8"
-                    html_body = payload.decode(charset, errors="replace")
+                    return payload.decode(charset, errors="replace")
     else:
-        content_type = msg.get_content_type()
         payload = msg.get_payload(decode=True)
         if payload:
             charset = msg.get_content_charset() or "utf-8"
-            decoded = payload.decode(charset, errors="replace")
-            if content_type == "text/html":
-                html_body = decoded
-            else:
-                plain_text = decoded
-
-    if html_body and cid_map:
-        for cid, data_uri in cid_map.items():
-            html_body = html_body.replace(f"cid:{cid}", data_uri)
-
-    return plain_text, html_body
+            return payload.decode(charset, errors="replace")
+    return ""
 
 
 def _parse_recipients(msg: Message) -> list[str]:
@@ -113,6 +88,70 @@ def _stable_id(msg_id: str | None, subject: str, date: str) -> str:
     """Generate a short stable ID from the Message-ID or a hash fallback."""
     raw = msg_id or f"{subject}-{date}"
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+
+def _extract_attachments(msg: Message) -> list[tuple[Attachment, bytes]]:
+    """Walk the MIME tree and return (Attachment metadata, raw bytes) for each attachment."""
+    results: list[tuple[Attachment, bytes]] = []
+    if not msg.is_multipart():
+        return results
+    for part in msg.walk():
+        content_type = part.get_content_type()
+        disposition = str(part.get("Content-Disposition", ""))
+        # Skip body parts (text/plain, text/html without attachment disposition)
+        if content_type in ("text/plain", "text/html") and "attachment" not in disposition.lower():
+            continue
+        if "attachment" in disposition.lower() or "inline" in disposition.lower():
+            raw_filename = part.get_filename()
+            if not raw_filename:
+                # Some inline images have no filename — synthesise one
+                ext = content_type.split("/")[-1] if "/" in content_type else "bin"
+                raw_filename = f"unnamed.{ext}"
+            # Decode RFC-2047 encoded filename
+            filename = _decode_header(raw_filename)
+            payload = part.get_payload(decode=True)
+            if payload is None:
+                continue
+            att = Attachment(
+                filename=filename,
+                content_type=content_type,
+                size=len(payload),
+            )
+            results.append((att, payload))
+    return results
+
+
+def _save_attachment(
+    att: Attachment,
+    payload: bytes,
+    data_dir: Path,
+    account_id: str,
+    uid: int,
+) -> str:
+    """Save attachment bytes to disk and return the relative stored path.
+
+    Layout: data/attachments/{account_id}/{uid}/{safe_filename}
+    Idempotent — skips write if the file already exists with the same size.
+    """
+    # Sanitise filename: keep only the basename, replace unsafe chars
+    safe_name = Path(att.filename).name
+    safe_name = "".join(c if (c.isalnum() or c in "._- ()") else "_" for c in safe_name)
+    if not safe_name:
+        safe_name = "attachment.bin"
+
+    dest_dir = data_dir / "attachments" / str(account_id) / str(uid)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_file = dest_dir / safe_name
+
+    # Idempotent: skip if already saved with same size
+    if dest_file.exists() and dest_file.stat().st_size == len(payload):
+        log.debug("attachment_already_saved", extra={"path": str(dest_file)})
+    else:
+        dest_file.write_bytes(payload)
+        log.info("attachment_saved", extra={"path": str(dest_file), "size": len(payload)})
+
+    # Return path relative to data_dir
+    return str(dest_file.relative_to(data_dir))
 
 
 def get_uidvalidity(conn: imaplib.IMAP4) -> int | None:
@@ -150,6 +189,7 @@ def sync_mailbox(
     last_uid: int = 0,
     highestmodseq: int = 0,
     uidvalidity: int | None = None,
+    data_dir: Path | None = None,
 ) -> tuple[list[Email], int, int, int, list[tuple[int, list[str]]]]:
     """Connect to an IMAP server and fetch new emails incrementally.
     
@@ -259,7 +299,7 @@ def sync_mailbox(
 
                 subject = _decode_header(msg.get("Subject"))
                 date = _parse_date(msg)
-                body, html_body = _extract_bodies(msg)
+                body = _extract_body(msg)
                 recipients = _parse_recipients(msg)
 
                 # Extract CC addresses
@@ -284,6 +324,19 @@ def sync_mailbox(
                 # id format: account_id:mailbox:uidvalidity:uid
                 stable_id = f"{account_id}:{mailbox}:{current_uidvalidity}:{uid}"
 
+                # ── Attachments ──────────────────────────────────────
+                attachments: list[Attachment] = []
+                try:
+                    raw_attachments = _extract_attachments(msg)
+                    for att, payload in raw_attachments:
+                        if data_dir is not None:
+                            att.stored_path = _save_attachment(
+                                att, payload, data_dir, account_id, uid_int,
+                            )
+                        attachments.append(att)
+                except Exception as att_exc:
+                    log.warning("attachment_extraction_failed", extra={"uid": uid_int, "error": str(att_exc)})
+
                 emails.append(Email(
                     id=stable_id,
                     uid=uid,
@@ -294,12 +347,12 @@ def sync_mailbox(
                     cc=cc_addrs,
                     subject=subject,
                     body=body[:5000],
-                    html_body=html_body,
                     timestamp=date,
                     thread_id=thread_id,
                     message_id=raw_msg_id or None,
                     in_reply_to=raw_in_reply_to,
                     references=ref_list,
+                    attachments=attachments,
                 ))
 
         flag_updates: list[tuple[int, list[str]]] = []
