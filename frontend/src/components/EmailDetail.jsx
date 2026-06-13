@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Shield, Sparkles, RotateCcw, Send, Zap, Clock, Gauge,
   ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check,
@@ -22,6 +22,150 @@ function formatFileSize(bytes) {
     const units = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+function formatPlainText(text) {
+    if (!text) return null;
+    try {
+        const lines = text.split('\n');
+        return lines.map((line, i) => {
+            const isQuote = line.trim().startsWith('>');
+            const elements = line.split(/(https?:\/\/[^\s]+)/).map((part, j) => {
+                if (part && (part.startsWith('http://') || part.startsWith('https://'))) {
+                    return <a key={j} href={part} target="_blank" rel="noopener noreferrer" style={{color: 'var(--accent)'}}>{part}</a>;
+                }
+                return part;
+            });
+
+            if (isQuote) {
+                return <blockquote key={i} className="email-quote">{elements}</blockquote>;
+            }
+            return <span key={i}>{elements}<br /></span>;
+        });
+    } catch (err) {
+        return <div style={{ color: 'red' }}>Format Text Error: {err.message}</div>;
+    }
+}
+
+function BodyRenderer({ msg, whiteMode }) {
+    const [iframeHeight, setIframeHeight] = useState('0px');
+    const [showImages, setShowImages] = useState(false);
+
+    const { safeHtml, hasBlockedImages, renderError } = useMemo(() => {
+        try {
+            if (!msg.html_body) return { safeHtml: null, hasBlockedImages: false, renderError: null };
+            if (showImages) return { safeHtml: msg.html_body, hasBlockedImages: false, renderError: null };
+
+            const lowerBody = msg.html_body.toLowerCase();
+            const hasImg = lowerBody.includes('<img') && lowerBody.includes('http');
+            const hasUrl = lowerBody.includes('url(') && lowerBody.includes('http');
+            
+            if (!hasImg && !hasUrl) {
+                return { safeHtml: msg.html_body, hasBlockedImages: false, renderError: null };
+            }
+
+            let modifiedHtml = msg.html_body;
+            let blocked = false;
+
+            if (hasUrl) {
+                const cleaned = modifiedHtml.replace(/url\((['"]?)(https?:\/\/[^'")\s]+)\1\)/gi, 'url()');
+                if (cleaned !== modifiedHtml) {
+                    modifiedHtml = cleaned;
+                    blocked = true;
+                }
+            }
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(modifiedHtml, 'text/html');
+            
+            const imgs = Array.from(doc.querySelectorAll('img'));
+            const remoteImgs = imgs.filter(img => (img.src || '').toLowerCase().startsWith('http'));
+
+            if (remoteImgs.length > 0) {
+                remoteImgs.forEach(img => {
+                    img.removeAttribute('srcset');
+                    img.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiPjwvc3ZnPg==';
+                    img.style.border = '1px dashed #ccc';
+                    img.title = 'Remote image blocked. Click "Load Images" to display.';
+                });
+                blocked = true;
+            }
+
+            if (blocked) {
+                return { safeHtml: doc.documentElement.outerHTML, hasBlockedImages: true, renderError: null };
+            }
+            
+            return { safeHtml: msg.html_body, hasBlockedImages: false, renderError: null };
+        } catch (err) {
+            return { safeHtml: null, hasBlockedImages: false, renderError: err.message };
+        }
+    }, [msg.html_body, showImages]);
+
+    if (renderError) {
+        return <div style={{ color: 'red', padding: '20px' }}>BodyRenderer Error: {renderError}</div>;
+    }
+
+    if (msg.html_body) {
+        return (
+            <div className="email-body-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {hasBlockedImages && !showImages && (
+                    <div className="blocked-images-banner" style={{ padding: '8px 12px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Shield size={14} /> Remote images blocked to protect your privacy.
+                        </span>
+                        <button className="btn btn-secondary" style={{ fontSize: '11px', padding: '4px 8px' }} onClick={() => setShowImages(true)}>
+                            Load Images
+                        </button>
+                    </div>
+                )}
+                <iframe
+                    key={whiteMode ? 'white' : 'dark'}
+                    title={`Email Body ${msg.id}`}
+                    srcDoc={safeHtml}
+                    sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+                    className="email-iframe"
+                    style={{ width: '100%', height: iframeHeight, border: 'none', overflow: 'hidden', backgroundColor: whiteMode ? '#fff' : 'transparent', borderRadius: whiteMode ? '8px' : '0' }}
+                    onLoad={(e) => {
+                        const doc = e.target.contentWindow?.document;
+                        if (!doc) return;
+                        
+                        const style = doc.createElement('style');
+                        if (whiteMode) {
+                            style.textContent = `
+                                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; padding: 16px; margin: 0; word-wrap: break-word; color: #000; background: #fff; }
+                                a { color: #0000EE; }
+                            `;
+                        } else {
+                            style.textContent = `
+                                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; padding: 0; margin: 0; word-wrap: break-word; color: #333; }
+                                @media (prefers-color-scheme: dark) {
+                                   body { color: #e5e7eb; }
+                                   a { color: #60a5fa; }
+                                }
+                            `;
+                        }
+                        doc.head.appendChild(style);
+                        
+                        const resize = () => {
+                            setIframeHeight((doc.documentElement.scrollHeight + 20) + 'px');
+                        };
+                        resize();
+                        setTimeout(resize, 100);
+                        
+                        try {
+                            new MutationObserver(resize).observe(doc.body, { childList: true, subtree: true, attributes: true });
+                            const imgs = doc.querySelectorAll('img');
+                            imgs.forEach(img => {
+                                img.addEventListener('load', resize);
+                            });
+                        } catch (err) {}
+                    }}
+                />
+            </div>
+        );
+    }
+
+    return null;
 }
 
 function AttachmentsBar({ attachments, emailId }) {
