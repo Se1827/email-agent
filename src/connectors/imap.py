@@ -153,7 +153,8 @@ def sync_mailbox(
             except Exception:
                 pass
 
-        _select_status, _select_data = conn.select(mailbox, readonly=True)
+        safe_mailbox = f'"{mailbox}"' if not mailbox.startswith('"') else mailbox
+        _select_status, _select_data = conn.select(safe_mailbox, readonly=True)
 
         current_uidvalidity = get_uidvalidity(conn) or 0
         current_highestmodseq = get_highestmodseq(conn) or 0
