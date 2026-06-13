@@ -417,7 +417,7 @@ class GraphConnector:
         return value
 
 
-    def send_message(self, to: str | list[str], subject: str, body_html: str, reply_to_id: str | None = None, cc: list[str] | None = None) -> dict:
+    def send_message(self, to: str | list[str], subject: str, body_html: str, reply_to_id: str | None = None, cc: list[str] | None = None, bcc: list[str] | None = None) -> dict:
         if IS_MOCK:
             return {
                 "id": f"sent-{uuid.uuid4().hex[:8]}",
@@ -432,6 +432,7 @@ class GraphConnector:
         
         to_list = [to] if isinstance(to, str) else to
         cc_list = cc or []
+        bcc_list = bcc or []
         
         if reply_to_id:
             url = f"{GRAPH_BASE}/me/messages/{reply_to_id}/replyAll"
@@ -446,6 +447,7 @@ class GraphConnector:
                     "body": {"contentType": "html", "content": body_html},
                     "toRecipients": [{"emailAddress": {"address": t}} for t in to_list if t],
                     "ccRecipients": [{"emailAddress": {"address": c}} for c in cc_list if c],
+                    "bccRecipients": [{"emailAddress": {"address": b}} for b in bcc_list if b],
                 },
                 "saveToSentItems": True,
             }
@@ -617,7 +619,7 @@ class GraphConnector:
             "sender": sender_obj.get("address", sender_obj.get("name", "")),
             "recipients": [r.get("emailAddress", {}).get("address", "") for r in m.get("toRecipients", [])],
             "body": plain_body,           # plain text for AI/classification
-            "body_html": raw_body if content_type == "html" else None,  # HTML for rendering
+            "html_body": raw_body if content_type == "html" else None,  # HTML for rendering
             "snippet": m.get("bodyPreview", plain_body[:120]),
             "timestamp": m.get("receivedDateTime", ""),
             "thread_id": m.get("conversationId", ""),

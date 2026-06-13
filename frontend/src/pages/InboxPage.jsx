@@ -11,7 +11,7 @@ import './InboxPage.css';
 const OUTLOOK_ACCOUNT = {
   id: 'outlook',
   name: 'Outlook',
-  email: 'Microsoft Graph',
+  email: 'Outlook (Graph)',
   provider: 'graph',
   color: '#6366f1',
   is_active: true,
@@ -21,15 +21,37 @@ async function fetchGraphEmails() {
   const res = await fetch('/api/graph/mail/inbox?top=50', {
     headers: { 'Content-Type': 'application/json' },
   });
-  if (!res.ok) return [];
-  const data = await res.json();
-  // Prefix IDs so they don't collide with regular emails
-  return (data.messages || []).map((m) => ({
-    ...m,
-    id: m.id.startsWith('outlook:') ? m.id : `outlook:${m.id}`,
-    account_id: 'outlook',
-    thread_id: m.thread_id ? (m.thread_id.startsWith('outlook:') ? m.thread_id : `outlook:${m.thread_id}`) : undefined,
-  }));
+  let graphMessages = [];
+  if (res.ok) {
+    const data = await res.json();
+    // Prefix IDs so they don't collide with regular emails
+    graphMessages = (data.messages || []).map((m) => ({
+      ...m,
+      id: m.id.startsWith('outlook:') ? m.id : `outlook:${m.id}`,
+      account_id: 'outlook',
+      thread_id: m.thread_id ? (m.thread_id.startsWith('outlook:') ? m.thread_id : `outlook:${m.thread_id}`) : undefined,
+    }));
+  }
+
+  // Fetch locally cached outlook emails (which includes composed Sent items)
+  try {
+    const localRes = await fetch('/api/emails?account_id=outlook', {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (localRes.ok) {
+      const localData = await localRes.json();
+      const existingIds = new Set(graphMessages.map(m => m.id));
+      for (const msg of localData) {
+        if (!existingIds.has(msg.id)) {
+          graphMessages.push(msg);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to merge local outlook emails:', e);
+  }
+
+  return graphMessages;
 }
 
 function InboxPage() {
@@ -91,8 +113,8 @@ function InboxPage() {
 
   useEffect(() => {
     fetchAccounts().then((data) => {
-      // Append the virtual Outlook account
-      const allAccounts = [...data, OUTLOOK_ACCOUNT];
+      // Append the virtual Outlook account if it isn't already returned by the backend
+      const allAccounts = data.some(a => a.id === 'outlook') ? data : [...data, OUTLOOK_ACCOUNT];
       setAccounts(allAccounts);
       if (selectedAccountId !== 'all' && selectedAccountId !== 'outlook' && !data.some((account) => account.id === selectedAccountId)) {
         setSelectedAccountId('all');

@@ -599,6 +599,19 @@ def _get_email(email_id: str) -> Email:
     _ensure_loaded()
     email = _emails.get(email_id)
     if email is None:
+        if email_id.startswith("outlook:"):
+            from src.connectors.graph import graph
+            try:
+                raw_id = email_id.split(":", 1)[1]
+                raw_msg = graph.get_message(raw_id)
+                email = Email.model_validate(graph.to_agent_email(raw_msg))
+                email.id = email_id
+                email.account_id = "outlook"
+                _emails[email.id] = email
+                return email
+            except Exception as e:
+                log.warning(f"Failed to fetch outlook email {email_id} from graph: {e}")
+                
         raise HTTPException(status_code=404, detail=f"Email {email_id} not found")
     return email
 
@@ -728,6 +741,28 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
     """
     _ensure_loaded()
     anchor = _get_email(email_id)
+
+    if anchor.account_id == "outlook" and anchor.thread_id:
+        from src.connectors.graph import graph
+        try:
+            raw_thread = graph.list_thread_messages(anchor.thread_id)
+            thread_emails_graph: dict[str, Email] = {}
+            for raw_msg in raw_thread:
+                try:
+                    em = Email.model_validate(graph.to_agent_email(raw_msg))
+                    if not em.id.startswith("outlook:"):
+                        em.id = f"outlook:{em.id}"
+                    em.account_id = "outlook"
+                    _emails[em.id] = em
+                    thread_emails_graph[em.id] = em
+                except Exception as e:
+                    log.warning(f"Failed to parse thread message {raw_msg.get('id')}: {e}")
+            if thread_emails_graph:
+                thread = [e.model_dump(mode="json") for e in thread_emails_graph.values()]
+                thread.sort(key=lambda e: e.get("timestamp", ""))
+                return thread
+        except Exception as e:
+            log.warning(f"Failed to fetch outlook thread {anchor.thread_id} from graph: {e}")
 
     # Build a lookup table: message_id → email
     by_msg_id: dict[str, Email] = {}
@@ -1014,7 +1049,10 @@ def _do_send_reply(
     account = _resolve_email_account(original)
 
     # Default recipients: reply to sender + original To (excluding ourselves)
-    from_addr = resolve_smtp_settings(account)["from_addr"] if account.provider != "graph" else account.email
+    from_addr = resolve_smtp_settings(account)["from_addr"] if account.provider != "graph" else None
+    if account.provider == "graph":
+        from src.connectors.graph import USER_EMAIL
+        from_addr = USER_EMAIL or account.email
     if to_addrs is None:
         if action == "reply_all":
             all_addrs = [original.sender] + original.recipients
@@ -1185,7 +1223,7 @@ async def send_reply(email_id: str, body: SendReplyRequest) -> dict[str, Any]:
             bcc_addrs=body.bcc,
             action=body.action,
         )
-    except RuntimeError as exc:
+    except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     _log_activity("sent_reply", f"Reply sent for '{original.subject[:40]}'", original.id)
@@ -1211,8 +1249,8 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Account {body.account_id} not found")
 
     if account.provider == "graph":
-        from src.connectors.graph import graph
-        from_addr = account.email
+        from src.connectors.graph import graph, USER_EMAIL
+        from_addr = USER_EMAIL or account.email
         try:
             graph.send_message(
                 to=body.to,
@@ -1221,7 +1259,7 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
                 subject=body.subject,
                 body_html=body.body
             )
-        except RuntimeError as exc:
+        except Exception as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         sent_msg_id = f"graph-sent-{uuid4().hex[:12]}"
     else:

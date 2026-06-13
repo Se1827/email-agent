@@ -66,6 +66,21 @@ def load_accounts(data_dir: Path) -> list[AccountConfig]:
                 if not entry.get("id"):
                     entry["id"] = _stable_account_id(entry.get("email", ""))
                 accounts.append(AccountConfig.model_validate(entry))
+            
+            # Inject Virtual Outlook Account if missing, so the backend route handlers
+            # (e.g. compose_email and _load_email_source) don't throw 404s.
+            if not any(a.id == "outlook" for a in accounts):
+                import os
+                graph_email = os.getenv("GRAPH_USER_EMAIL", "outlook-user@outlook.com")
+                accounts.append(AccountConfig(
+                    id="outlook",
+                    name="Outlook",
+                    email=graph_email,
+                    provider="graph",
+                    is_active=True,
+                    color="#6366f1"
+                ))
+
             log.info("accounts_loaded", extra={"count": len(accounts)})
             return accounts
         except Exception:
