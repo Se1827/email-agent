@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Shield, Sparkles, RotateCcw, Send, Zap, Clock, Gauge,
-  ChevronDown, ChevronUp, Reply, MessageSquare, Check
+  ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check
 } from 'lucide-react';
 import {
   classifyEmail, draftReply, approveDraft, fetchEmail,
@@ -74,10 +74,40 @@ function EmailDetail({ email, onUpdate, onReload }) {
 
     // Inline reply state
     const [showReply, setShowReply] = useState(false);
+    const [replyAction, setReplyAction] = useState('reply');
+    const [replyTo, setReplyTo] = useState('');
+    const [replyCc, setReplyCc] = useState('');
+    const [replyBcc, setReplyBcc] = useState('');
     const [replyBody, setReplyBody] = useState('');
     const [sendingReply, setSendingReply] = useState(false);
 
     const replyRef = useRef(null);
+
+    const openReply = (action) => {
+        setReplyAction(action);
+        
+        let initialTo = '';
+        let initialCc = '';
+        let initialBody = '';
+        
+        if (action === 'reply') {
+            initialTo = email.sender;
+        } else if (action === 'reply_all') {
+            const allTo = [email.sender, ...(email.recipients || [])];
+            initialTo = [...new Set(allTo)].join(', ');
+            initialCc = (email.cc || []).join(', ');
+        } else if (action === 'forward') {
+            initialBody = `\n\n---------- Forwarded message ---------\nFrom: ${email.sender}\nDate: ${formatFullDate(email.timestamp)}\nSubject: ${email.subject}\nTo: ${(email.recipients || []).join(', ')}\n\n${email.body}`;
+        }
+        
+        setReplyTo(initialTo);
+        setReplyCc(initialCc);
+        setReplyBcc('');
+        setReplyBody(initialBody);
+        
+        setShowReply(true);
+        setTimeout(() => replyRef.current?.focus(), 100);
+    };
 
     // Load thread when email changes
     useEffect(() => {
@@ -146,6 +176,8 @@ function EmailDetail({ email, onUpdate, onReload }) {
             setEditedDraft(null);
             // Pre-fill the reply area with the draft
             if (updated.draft_reply) {
+                setReplyAction('reply');
+                setReplyTo(email.sender);
                 setReplyBody(updated.draft_reply.body);
                 setShowReply(true);
                 setTimeout(() => replyRef.current?.focus(), 100);
@@ -196,7 +228,11 @@ function EmailDetail({ email, onUpdate, onReload }) {
             const latestReceived = sortedThread.reverse().find(m => !m.is_sent);
             const replyTargetId = latestReceived?.id || email.id;
 
-            await sendReply(replyTargetId, replyBody);
+            const toList = replyTo.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+            const ccList = replyCc.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+            const bccList = replyBcc.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+
+            await sendReply(replyTargetId, replyBody, toList, ccList, bccList, replyAction);
             setReplyBody('');
             setShowReply(false);
             // Refresh thread
@@ -345,12 +381,29 @@ function EmailDetail({ email, onUpdate, onReload }) {
                     </button>
                 )}
                 <div className="detail-actions-spacer" />
-                <button
-                    className="btn btn-action reply-toggle-btn"
-                    onClick={() => { setShowReply(!showReply); setTimeout(() => replyRef.current?.focus(), 100); }}
-                >
-                    <Reply size={14} /> Reply
-                </button>
+                <div className="btn-group" style={{ display: 'flex', gap: '4px' }}>
+                    <button
+                        className="btn btn-action reply-toggle-btn"
+                        onClick={() => openReply('reply')}
+                        title="Reply"
+                    >
+                        <Reply size={14} /> Reply
+                    </button>
+                    <button
+                        className="btn btn-action reply-toggle-btn"
+                        onClick={() => openReply('reply_all')}
+                        title="Reply All"
+                    >
+                        <ReplyAll size={14} /> Reply All
+                    </button>
+                    <button
+                        className="btn btn-action reply-toggle-btn"
+                        onClick={() => openReply('forward')}
+                        title="Forward"
+                    >
+                        <Forward size={14} /> Forward
+                    </button>
+                </div>
             </div>
 
             {/* Thread / Conversation */}
@@ -431,16 +484,30 @@ function EmailDetail({ email, onUpdate, onReload }) {
                 {showReply && (
                     <div className="inline-reply animate-slide-up">
                         <div className="inline-reply-header">
-                            <Reply size={14} />
-                            <span>Reply to {formatSender(email.sender)}</span>
+                            {replyAction === 'forward' ? <Forward size={14} /> : <Reply size={14} />}
+                            <span style={{ textTransform: 'capitalize' }}>{replyAction.replace('_', ' ')}</span>
+                        </div>
+                        <div className="inline-reply-fields" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '0 12px 12px 12px', borderBottom: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ width: '30px', color: 'var(--text-light)', fontSize: '13px' }}>To:</span>
+                                <input className="input compose-input" value={replyTo} onChange={e => setReplyTo(e.target.value)} style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }} placeholder="recipients" />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ width: '30px', color: 'var(--text-light)', fontSize: '13px' }}>Cc:</span>
+                                <input className="input compose-input" value={replyCc} onChange={e => setReplyCc(e.target.value)} style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }} placeholder="cc" />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ width: '30px', color: 'var(--text-light)', fontSize: '13px' }}>Bcc:</span>
+                                <input className="input compose-input" value={replyBcc} onChange={e => setReplyBcc(e.target.value)} style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }} placeholder="bcc" />
+                            </div>
                         </div>
                         <textarea
                             ref={replyRef}
                             className="inline-reply-body"
                             value={replyBody}
                             onChange={(e) => setReplyBody(e.target.value)}
-                            placeholder="Type your reply..."
-                            rows={5}
+                            placeholder="Type your message..."
+                            rows={8}
                         />
                         <div className="inline-reply-actions">
                             {cls && (

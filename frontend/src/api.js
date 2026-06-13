@@ -41,17 +41,17 @@ export function approveDraft(id) {
     return request(`/emails/${id}/approve`, { method: 'POST' });
 }
 
-export function sendReply(emailId, body, to, cc) {
+export function sendReply(emailId, body, to, cc, bcc, action = 'reply') {
     return request(`/emails/${emailId}/send-reply`, {
         method: 'POST',
-        body: JSON.stringify({ body, to: to || null, cc: cc || null }),
+        body: JSON.stringify({ body, to: to || null, cc: cc || null, bcc: bcc || null, action }),
     });
 }
 
-export function composeEmail(to, cc, subject, body, accountId) {
+export function composeEmail(to, cc, bcc, subject, body, accountId) {
     return request('/emails/compose', {
         method: 'POST',
-        body: JSON.stringify({ to, cc, subject, body, account_id: accountId }),
+        body: JSON.stringify({ to, cc, bcc, subject, body, account_id: accountId }),
     });
 }
 

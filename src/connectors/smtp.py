@@ -42,6 +42,7 @@ def send_email(
     from_name: str = "",
     to_addrs: list[str],
     cc_addrs: list[str] | None = None,
+    bcc_addrs: list[str] | None = None,
     subject: str,
     body: str,
     in_reply_to: str | None = None,
@@ -61,6 +62,7 @@ def send_email(
       - from_name:  sender display name (optional)
       - to_addrs:   list of recipient email addresses
       - cc_addrs:   list of CC email addresses (optional)
+      - bcc_addrs:  list of BCC email addresses (optional, hidden from headers)
       - subject:    email subject
       - body:       plain-text email body
       - in_reply_to: Message-ID of the email being replied to
@@ -68,6 +70,7 @@ def send_email(
       - message_id:  pre-generated Message-ID (generated if omitted)
     """
     cc_addrs = cc_addrs or []
+    bcc_addrs = bcc_addrs or []
 
     # Extract domain from sender address for Message-ID generation
     domain = from_addr.split("@")[-1].strip(">").strip() if "@" in from_addr else "emailagent.local"
@@ -106,8 +109,15 @@ def send_email(
     html_content = f"<html><body>{''.join(html_body)}</body></html>"
     msg.attach(MIMEText(html_content, "html", "utf-8"))
 
-    # All recipients (To + Cc)
-    all_recipients = list(to_addrs) + list(cc_addrs)
+    # All recipients (To + Cc + Bcc) for the SMTP envelope
+    all_recipients = list(to_addrs) + list(cc_addrs) + list(bcc_addrs)
+    
+    # Clean envelope recipients: strict SMTP requires bare addresses (e.g. "john@doe.com" not "John <john@doe.com>")
+    from email.utils import parseaddr
+    envelope_recipients = []
+    for r in all_recipients:
+        _, addr = parseaddr(r)
+        envelope_recipients.append(addr if addr else r)
 
     log.info(
         "smtp_sending",
@@ -117,6 +127,7 @@ def send_email(
             "from": from_addr,
             "to_count": len(to_addrs),
             "cc_count": len(cc_addrs),
+            "bcc_count": len(bcc_addrs),
             "has_reply_to": bool(in_reply_to),
             "in_reply_to": in_reply_to,
             "references": references,
@@ -137,7 +148,7 @@ def send_email(
 
         try:
             server.login(username, password)
-            server.sendmail(from_addr, all_recipients, msg.as_string())
+            server.sendmail(from_addr, envelope_recipients, msg.as_string())
             log.info("smtp_sent", extra={"message_id": msg_id})
         finally:
             try:

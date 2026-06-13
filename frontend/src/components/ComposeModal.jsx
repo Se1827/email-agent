@@ -15,6 +15,7 @@ const QUALITY_OPTIONS = [
 function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
   const [to, setTo] = useState('');
   const [cc, setCc] = useState('');
+  const [bcc, setBcc] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [accountId, setAccountId] = useState('');
@@ -22,6 +23,7 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
 
   const [showAI, setShowAI] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -78,11 +80,12 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
     setError(null);
     try {
       const ccList = showCc ? parseAddresses(cc) : [];
-      await composeEmail(toList, ccList, subject, body, accountId);
+      const bccList = showBcc ? parseAddresses(bcc) : [];
+      await composeEmail(toList, ccList, bccList, subject, body, accountId);
       onSent?.();
       // Reset
-      setTo(''); setCc(''); setSubject(''); setBody('');
-      setShowCc(false); setError(null);
+      setTo(''); setCc(''); setBcc(''); setSubject(''); setBody('');
+      setShowCc(false); setShowBcc(false); setError(null);
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to send email.');
@@ -112,8 +115,8 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
   const handleClose = () => {
     if (hasContent) {
       if (window.confirm('Discard this email?')) {
-        setTo(''); setCc(''); setSubject(''); setBody('');
-        setShowCc(false); setError(null);
+        setTo(''); setCc(''); setBcc(''); setSubject(''); setBody('');
+        setShowCc(false); setShowBcc(false); setError(null);
         onClose();
       }
     } else {
@@ -164,6 +167,11 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
                 Cc
               </button>
             )}
+            {!showBcc && (
+              <button type="button" className="compose-cc-toggle" onClick={() => setShowBcc(true)}>
+                Bcc
+              </button>
+            )}
           </div>
 
           {showCc && (
@@ -174,6 +182,18 @@ function ComposeModal({ open, onClose, onSent, accounts: propAccounts }) {
                 value={cc}
                 onChange={(e) => setCc(e.target.value)}
                 placeholder="cc@example.com"
+              />
+            </div>
+          )}
+
+          {showBcc && (
+            <div className="compose-field">
+              <label className="compose-label">Bcc</label>
+              <input
+                className="input compose-input"
+                value={bcc}
+                onChange={(e) => setBcc(e.target.value)}
+                placeholder="bcc@example.com"
               />
             </div>
           )}
