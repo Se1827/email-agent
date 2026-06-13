@@ -319,12 +319,28 @@ function EmailDetail({ email, onUpdate, onReload }) {
         });
     };
 
+    const isOutlook = email.account_id === 'outlook';
+    // Outlook emails use the raw Graph ID (strip 'outlook:' prefix)
+    const graphId = isOutlook ? email.id.replace(/^outlook:/, '') : null;
+
     const handleClassify = async () => {
         setBusy('classify');
         try {
-            await classifyEmail(email.id);
-            const updated = await fetchEmail(email.id);
-            onUpdate(updated);
+            if (isOutlook) {
+                const res = await fetch('/api/graph/mail/classify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message_id: graphId }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const result = await res.json();
+                // Apply classification to the local email object
+                onUpdate({ ...email, classification: result.classification || result });
+            } else {
+                await classifyEmail(email.id);
+                const updated = await fetchEmail(email.id);
+                onUpdate(updated);
+            }
             showToast('Classified successfully');
         } catch (err) {
             showToast(err.message, 'error');
@@ -336,17 +352,36 @@ function EmailDetail({ email, onUpdate, onReload }) {
     const handleDraft = async () => {
         setBusy('draft');
         try {
-            await draftReply(email.id, draftQuality);
-            const updated = await fetchEmail(email.id);
-            onUpdate(updated);
-            setEditedDraft(null);
-            // Pre-fill the reply area with the draft
-            if (updated.draft_reply) {
-                setReplyAction('reply');
-                setReplyTo(email.sender);
-                setReplyBody(updated.draft_reply.body);
-                setShowReply(true);
-                setTimeout(() => replyRef.current?.focus(), 100);
+            if (isOutlook) {
+                const res = await fetch('/api/graph/mail/draft-reply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message_id: graphId, quality: draftQuality }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const result = await res.json();
+                const draftBody = result.draft_reply?.body || result.body || result.draft || '';
+                onUpdate({ ...email, draft_reply: result.draft_reply || { body: draftBody, quality: draftQuality } });
+                setEditedDraft(null);
+                if (draftBody) {
+                    setReplyAction('reply');
+                    setReplyTo(email.sender);
+                    setReplyBody(draftBody);
+                    setShowReply(true);
+                    setTimeout(() => replyRef.current?.focus(), 100);
+                }
+            } else {
+                await draftReply(email.id, draftQuality);
+                const updated = await fetchEmail(email.id);
+                onUpdate(updated);
+                setEditedDraft(null);
+                if (updated.draft_reply) {
+                    setReplyAction('reply');
+                    setReplyTo(email.sender);
+                    setReplyBody(updated.draft_reply.body);
+                    setShowReply(true);
+                    setTimeout(() => replyRef.current?.focus(), 100);
+                }
             }
             showToast('AI draft generated');
         } catch (err) {
