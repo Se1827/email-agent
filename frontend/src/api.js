@@ -72,6 +72,11 @@ export function markAsRead(id) {
     return request(`/emails/${id}/read`, { method: 'POST' });
 }
 
+// ---- Attachments ----
+export function getAttachmentUrl(emailId, filename) {
+    return `${API_BASE}/attachments/${encodeURIComponent(emailId)}/${encodeURIComponent(filename)}`;
+}
+
 // ---- Dashboard ----
 export function fetchDashboard() {
     return request('/dashboard');
