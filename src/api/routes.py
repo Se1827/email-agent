@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from src.config import get_settings
@@ -131,6 +132,7 @@ def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) ->
             last_uid=state.last_uid,
             highestmodseq=state.highestmodseq,
             uidvalidity=state.uidvalidity if state.uidvalidity else None,
+            data_dir=cfg.data_dir,
         )
         
         if flag_updates:
@@ -1740,6 +1742,39 @@ async def ask_ai(body: AskAIRequest) -> dict[str, Any]:
         "context_id": body.context_id,
         "status": "stub",
     }
+
+
+# ---- Attachment Endpoints --------------------------------------------------
+
+
+@router.get("/attachments/{email_id:path}/{filename}")
+async def download_attachment(email_id: str, filename: str):
+    """Download a saved attachment file by email ID and filename."""
+    _ensure_loaded()
+    email = _emails.get(email_id)
+    if email is None:
+        raise HTTPException(status_code=404, detail=f"Email {email_id} not found")
+
+    # Find the matching attachment
+    att = None
+    for a in email.attachments:
+        if a.filename == filename:
+            att = a
+            break
+    if att is None or not att.stored_path:
+        raise HTTPException(status_code=404, detail=f"Attachment '{filename}' not found")
+
+    cfg = get_settings()
+    file_path = cfg.data_dir / att.stored_path
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Attachment file missing from disk")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=att.content_type,
+        filename=att.filename,
+        headers={"Content-Disposition": f'attachment; filename="{att.filename}"'},
+    )
 
 
 # ---- Storage Endpoints -----------------------------------------------------
