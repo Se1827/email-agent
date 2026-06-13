@@ -165,11 +165,25 @@ def sync_mailbox(
             last_uid = 0
             highestmodseq = 0
 
+        is_buggy_server = "elektrine" in host.lower()
+
         if last_uid == 0:
             # First sync: only grab the most recent N
             _status, data = conn.uid("search", "ALL")
             all_uids_str = data[0].split() if data and data[0] else []
             new_uids = all_uids_str[-50:]  # Limit to 50
+        elif is_buggy_server:
+            # Fallback for servers that mis-parse UID ranges (e.g., Elektrine)
+            _status, data = conn.uid("search", "ALL")
+            all_uids_str = data[0].split() if data and data[0] else []
+            new_uids = []
+            for uid_bytes in all_uids_str:
+                try:
+                    uid_int = int(uid_bytes.decode('ascii'))
+                    if uid_int > last_uid:
+                        new_uids.append(uid_bytes)
+                except ValueError:
+                    pass
         else:
             try:
                 _status, data = conn.uid("search", "UID", f"{last_uid + 1}:*")
@@ -177,7 +191,7 @@ def sync_mailbox(
                     raise ValueError("search failed")
                 new_uids = data[0].split() if data and data[0] else []
             except Exception:
-                # Fallback for servers that mis-parse UID ranges (e.g., Elektrine)
+                # Fallback for servers that mis-parse UID ranges
                 _status, data = conn.uid("search", "ALL")
                 all_uids_str = data[0].split() if data and data[0] else []
                 new_uids = []

@@ -427,8 +427,15 @@ def _stamp_account_email(email: Email, account: AccountConfig, inbox: str) -> No
         email.thread_id = f"{account.id}:{email.thread_id}"
 
 
+_is_loaded = False
+
 def _ensure_loaded() -> None:
     """Populate the in-memory stores on first access."""
+    global _is_loaded
+    if _is_loaded:
+        return
+    _is_loaded = True
+    
     if not _emails:
         try:
             cfg = get_settings()
@@ -438,8 +445,14 @@ def _ensure_loaded() -> None:
                     if account.is_active:
                         _load_emails_from_storage(account_inbox(account), account=account)
             if load_mode != "db_only":
-                for email in _load_email_source():
-                    _merge_source_email(email, source=email.account_id or cfg.email_source)
+                def _background_sync():
+                    try:
+                        for email in _load_email_source():
+                            _merge_source_email(email, source=email.account_id or cfg.email_source)
+                    except Exception as e:
+                        log.error("background_sync_failed", extra={"error": str(e)})
+                
+                threading.Thread(target=_background_sync, daemon=True).start()
         except Exception as exc:
             log.error("email_load_failed", extra={"error": str(exc)})
             raise HTTPException(
@@ -1323,14 +1336,23 @@ async def classify_all(
 
 @router.post("/emails/refresh")
 async def refresh_emails() -> dict[str, Any]:
-    """Clear the in-memory email store and re-fetch from the source.
-
-    Useful when using IMAP to pull new mail without restarting the server.
-    """
-    _emails.clear()
+    """Trigger an immediate IMAP sync for new emails without clearing the cache."""
     _ensure_loaded()
-    _log_activity("refreshed", f"Inbox refreshed — {len(_emails)} emails loaded")
-    return {"status": "refreshed", "count": len(_emails)}
+    
+    cfg = get_settings()
+    emails_added = 0
+    for account in load_accounts(cfg.data_dir):
+        if not account.is_active:
+            continue
+        inbox = account_inbox(account)
+        new_emails = _load_account_email_source(account, inbox)
+        for email in new_emails:
+            _stamp_account_email(email, account, inbox)
+            _merge_source_email(email, source=email.account_id or cfg.email_source)
+        emails_added += len(new_emails)
+        
+    _log_activity("refreshed", f"Inbox synced — {emails_added} new emails fetched")
+    return {"status": "refreshed", "new_count": emails_added, "total_count": len(_emails)}
 
 
 # ---- Dashboard Endpoints ---------------------------------------------------

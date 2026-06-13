@@ -22,8 +22,8 @@ function InboxPage() {
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
 
-  const loadEmails = useCallback(async () => {
-    setLoading(true);
+  const loadEmails = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const data = await fetchEmails(selectedAccountId === 'all' ? null : selectedAccountId);
@@ -31,12 +31,19 @@ function InboxPage() {
     } catch (err) {
       setError('Cannot reach the API server. Is it running on :8000?');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [selectedAccountId]);
 
   useEffect(() => {
-    loadEmails();
+    loadEmails(true);
+    
+    // Auto-fetch polling every 5 seconds
+    const interval = setInterval(() => {
+      loadEmails(false);
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, [loadEmails]);
 
   useEffect(() => {

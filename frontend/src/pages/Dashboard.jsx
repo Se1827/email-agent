@@ -37,6 +37,15 @@ function Dashboard() {
 
   useEffect(() => {
     loadDashboard();
+    
+    // Auto-fetch polling every 5 seconds (backend serves from instant memory)
+    const interval = setInterval(() => {
+      fetchDashboard()
+        .then(d => setData(d))
+        .catch(err => console.error('Auto-fetch failed:', err));
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const loadDashboard = async () => {
