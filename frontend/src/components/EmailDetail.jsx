@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Shield, Sparkles, RotateCcw, Send, Zap, Clock, Gauge,
-  ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check
+  ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check,
+  Paperclip, Download
 } from 'lucide-react';
 import {
   classifyEmail, draftReply, approveDraft, fetchEmail,
-  markAsRead, fetchThread, sendReply
+  markAsRead, fetchThread, sendReply, getAttachmentUrl
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
 import './EmailDetail.css';
@@ -16,73 +17,43 @@ const QUALITY_OPTIONS = [
     { value: 'thorough', label: 'Thorough', icon: Clock, desc: 'Detailed, comprehensive' },
 ];
 
-function formatPlainText(text) {
-    if (!text) return null;
-    const lines = text.split('\n');
-    return lines.map((line, i) => {
-        if (line.trim().startsWith('>')) {
-            return <blockquote key={i} className="email-quote">{line}</blockquote>;
-        }
-        return <span key={i}>{line}<br /></span>;
-    });
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-function BodyRenderer({ msg, whiteMode }) {
-    const [iframeHeight, setIframeHeight] = useState('0px');
-
-    if (msg.html_body) {
-        return (
-            <iframe
-                key={whiteMode ? 'white' : 'dark'}
-                title={`Email Body ${msg.id}`}
-                srcDoc={msg.html_body}
-                sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
-                className="email-iframe"
-                style={{ width: '100%', height: iframeHeight, border: 'none', overflow: 'hidden', backgroundColor: whiteMode ? '#fff' : 'transparent', borderRadius: whiteMode ? '8px' : '0' }}
-                onLoad={(e) => {
-                    const doc = e.target.contentWindow?.document;
-                    if (!doc) return;
-                    
-                    const style = doc.createElement('style');
-                    if (whiteMode) {
-                        style.textContent = `
-                            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; padding: 16px; margin: 0; word-wrap: break-word; color: #000; background: #fff; }
-                            a { color: #0000EE; }
-                        `;
-                    } else {
-                        style.textContent = `
-                            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; padding: 0; margin: 0; word-wrap: break-word; color: #333; }
-                            @media (prefers-color-scheme: dark) {
-                               body { color: #e5e7eb; }
-                               a { color: #60a5fa; }
-                            }
-                        `;
-                    }
-                    doc.head.appendChild(style);
-                    
-                    const resize = () => {
-                        setIframeHeight((doc.documentElement.scrollHeight + 20) + 'px');
-                    };
-                    resize();
-                    setTimeout(resize, 100);
-                    setTimeout(resize, 500);
-                    
-                    try {
-                        new MutationObserver(resize).observe(doc.body, { childList: true, subtree: true, attributes: true });
-                    } catch (err) {}
-                }}
-            />
-        );
-    }
-
+function AttachmentsBar({ attachments, emailId }) {
+    if (!attachments || attachments.length === 0) return null;
     return (
-        <div className="email-body-text" style={whiteMode ? { backgroundColor: '#fff', color: '#000', padding: '16px', borderRadius: '8px' } : {}}>
-            {formatPlainText(msg.body)}
+        <div className="attachments-bar">
+            <span className="attachments-bar-label">
+                <Paperclip size={12} />
+                {attachments.length} {attachments.length === 1 ? 'attachment' : 'attachments'}
+            </span>
+            {attachments.map((att, idx) => (
+                <a
+                    key={idx}
+                    className="attachment-chip"
+                    href={getAttachmentUrl(emailId, att.filename)}
+                    download={att.filename}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Download ${att.filename} (${formatFileSize(att.size)})`}
+                >
+                    <span className="attachment-chip-icon"><Download size={12} /></span>
+                    {att.filename}
+                    {att.size > 0 && (
+                        <span className="attachment-chip-size">({formatFileSize(att.size)})</span>
+                    )}
+                </a>
+            ))}
         </div>
     );
 }
 
-function ThreadMessage({ msg, isExpanded, onToggle, isLatest, whiteMode }) {
+function ThreadMessage({ msg, isExpanded, onToggle, isLatest }) {
     const isSent = msg.is_sent;
 
     return (
@@ -119,7 +90,8 @@ function ThreadMessage({ msg, isExpanded, onToggle, isLatest, whiteMode }) {
                         )}
                         <span className="thread-msg-detail">{formatFullDate(msg.timestamp)}</span>
                     </div>
-                    <BodyRenderer msg={msg} whiteMode={whiteMode} />
+                    <pre className="email-body-text">{msg.body}</pre>
+                    <AttachmentsBar attachments={msg.attachments} emailId={msg.id} />
                 </div>
             )}
         </div>
@@ -132,7 +104,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
     const [draftQuality, setDraftQuality] = useState('balanced');
     const [editedDraft, setEditedDraft] = useState(null);
     const [showQuality, setShowQuality] = useState(false);
-    const [whiteMode, setWhiteMode] = useState(false);
 
     // Thread state
     const [thread, setThread] = useState([]);
@@ -399,9 +370,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
                         <><Sparkles size={14} /> {cls ? 'Re-classify' : 'Classify'}</>
                     )}
                 </button>
-                <button className={`btn btn-action ${whiteMode ? 'active' : ''}`} onClick={() => setWhiteMode(!whiteMode)}>
-                    View in {whiteMode ? 'Dark' : 'White'} Mode
-                </button>
                 {cls && (
                     <>
                         <div className="quality-selector-wrapper">
@@ -493,7 +461,6 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                 isExpanded={expandedMsgs.has(msg.id)}
                                 onToggle={() => toggleMsg(msg.id)}
                                 isLatest={idx === thread.length - 1}
-                                whiteMode={whiteMode}
                             />
                         ))}
                     </div>
@@ -516,7 +483,8 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                 <span className="detail-date">{formatFullDate(email.timestamp)}</span>
                             </div>
                         </div>
-                        <BodyRenderer msg={email} whiteMode={whiteMode} />
+                        <pre className="email-body-text">{email.body}</pre>
+                        <AttachmentsBar attachments={email.attachments} emailId={email.id} />
                     </div>
                 )}
 
