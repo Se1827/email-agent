@@ -1,16 +1,13 @@
 """API routes for the email agent."""
-
 from __future__ import annotations
-
 import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
-
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-
 from src.config import get_settings
 from src.connectors.mock import load_emails as load_mock_emails
 from src.connectors.imap import sync_mailbox, idle_loop
@@ -64,11 +61,8 @@ from src.storage import (
     safe_store_sync_state,
     clear_sync_state,
 )
-
 import threading
-
 _idle_threads: dict[str, threading.Thread] = {}
-
 def _ensure_idle_connection(account: AccountConfig, inbox: str) -> None:
     if account.provider != "imap":
         return
@@ -87,7 +81,6 @@ def _ensure_idle_connection(account: AccountConfig, inbox: str) -> None:
                 _merge_source_email(email, source=email.account_id or cfg.email_source)
         except Exception as exc:
             log.error("idle_sync_failed", extra={"error": str(exc)})
-
     host = account.imap_host or cfg.imap_host
     port = account.imap_port or cfg.imap_port
     username = account.imap_user or account.email or cfg.imap_user
@@ -102,8 +95,6 @@ def _ensure_idle_connection(account: AccountConfig, inbox: str) -> None:
     t.start()
     _idle_threads[thread_key] = t
     log.info("idle_thread_started", extra={"account": account.id, "mailbox": mailbox})
-
-
 def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) -> list[Email]:
     cfg = get_settings()
     host = account.imap_host or cfg.imap_host
@@ -111,13 +102,11 @@ def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) ->
     username = account.imap_user or account.email or cfg.imap_user
     password = account.imap_pass or cfg.imap_pass
     use_ssl = account.imap_use_ssl
-
     raw_state = load_sync_state(account.id, imap_mailbox)
     if raw_state:
         state = SyncState.model_validate(raw_state)
     else:
         state = SyncState(account_id=account.id, mailbox=imap_mailbox, uidvalidity=0, last_uid=0, highestmodseq=0)
-
     try:
         emails, new_last_uid, new_highestmodseq, new_uidvalidity, flag_updates = sync_mailbox(
             account_id=account.id,
@@ -131,6 +120,7 @@ def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) ->
             last_uid=state.last_uid,
             highestmodseq=state.highestmodseq,
             uidvalidity=state.uidvalidity if state.uidvalidity else None,
+            data_dir=str(cfg.data_dir),
         )
         
         if flag_updates:
@@ -139,7 +129,6 @@ def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) ->
                 if stable_id in _emails:
                     _emails[stable_id].is_read = any(f.lower() == "\\seen" for f in flags)
                     safe_store_email(_emails[stable_id], source="imap_sync")
-
         if new_uidvalidity and new_uidvalidity != state.uidvalidity:
             # uidvalidity changed or initialized
             state.uidvalidity = new_uidvalidity
@@ -155,13 +144,9 @@ def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) ->
     except Exception as exc:
         log.warning(f"Failed to sync mailbox {imap_mailbox}", extra={"error": str(exc), "account": account.email})
         return []
-
 log = logging.getLogger(__name__)
-
 router = APIRouter()
-
 # ---- In-memory stores (initialised lazily) --------------------------------
-
 class ThreadSafeDict(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -211,13 +196,10 @@ class ThreadSafeDict(dict):
     def __len__(self):
         with self.lock:
             return super().__len__()
-
 _emails: ThreadSafeDict = ThreadSafeDict()
 _calendar: list[CalendarEvent] = []
 _notifications: list[Notification] = []
 _activity_log: list[dict[str, Any]] = []
-
-
 def _log_activity(action: str, detail: str, related_id: str | None = None) -> None:
     """Append an entry to the in-memory activity feed."""
     _activity_log.insert(0, {
@@ -229,21 +211,15 @@ def _log_activity(action: str, detail: str, related_id: str | None = None) -> No
     })
     if len(_activity_log) > 50:
         _activity_log[:] = _activity_log[:50]
-
-
 _dismissed_notification_ids: set[str] = set()
-
-
 def _generate_notifications() -> None:
     """Build smart notifications from real email + calendar state.
-
     Every notification is derived from actual data in _emails and _calendar,
     not hardcoded. Regenerated fresh on each call but dismissed IDs are
     preserved so dismissed alerts stay gone.
     """
     generated: list[Notification] = []
     now = datetime.now(timezone.utc)
-
     # ── 1. Urgent unresponded emails (from real classified data) ─────────
     urgent_emails = [
         e for e in _emails.values()
@@ -263,7 +239,6 @@ def _generate_notifications() -> None:
             related_type="email",
             timestamp=now,
         ))
-
     # ── 2. Upcoming calendar events (real events within 48h) ────────────
     for ev in _calendar:
         ev_start = ev.start
@@ -272,7 +247,6 @@ def _generate_notifications() -> None:
         delta = (ev_start - now).total_seconds() / 3600
         if delta < 0 or delta > 48:
             continue
-
         if delta < 1:
             sev, time_msg = "critical", "Less than 1 hour away"
         elif delta < 6:
@@ -281,7 +255,6 @@ def _generate_notifications() -> None:
             sev, time_msg = "warning", f"In {int(delta)} hours"
         else:
             sev, time_msg = "info", f"Tomorrow — in {int(delta)} hours"
-
         evt_type = "deadline" if ev.is_all_day else "meeting_soon"
         prefix = "Deadline" if ev.is_all_day else "Upcoming"
         location_hint = f" @ {ev.location}" if ev.location else ""
@@ -295,7 +268,6 @@ def _generate_notifications() -> None:
             related_type="event",
             timestamp=now,
         ))
-
     # ── 3. Unclassified emails (real count) ─────────────────────────────
     unclassified = [e for e in _emails.values() if not e.classification]
     if unclassified:
@@ -307,7 +279,6 @@ def _generate_notifications() -> None:
             severity="info" if len(unclassified) < 5 else "warning",
             timestamp=now,
         ))
-
     # ── 4. Drafts awaiting approval (real count) ────────────────────────
     pending_drafts = [e for e in _emails.values() if e.draft_reply and not e.is_read]
     if pending_drafts:
@@ -321,7 +292,6 @@ def _generate_notifications() -> None:
             related_type="email",
             timestamp=now,
         ))
-
     # ── 5. Meeting & action-required emails with calendar context ───────
     for e in _emails.values():
         if not e.classification:
@@ -331,9 +301,7 @@ def _generate_notifications() -> None:
             continue
         if e.draft_reply:
             continue
-
         notif_id = f"notif-action-{e.id[:8]}"
-
         if cat == "action-required":
             generated.append(Notification(
                 id=notif_id,
@@ -360,14 +328,11 @@ def _generate_notifications() -> None:
                     related_type="email",
                     timestamp=now,
                 ))
-
     # Replace notifications list, filtering out dismissed ones
     _notifications.clear()
     _notifications.extend(
         n for n in generated if n.id not in _dismissed_notification_ids
     )
-
-
 def _load_email_source() -> list[Email]:
     """Load emails from every active configured account."""
     cfg = get_settings()
@@ -381,8 +346,6 @@ def _load_email_source() -> list[Email]:
             _stamp_account_email(email, account, inbox)
         emails.extend(source_emails)
     return emails
-
-
 def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email]:
     cfg = get_settings()
     if account.provider == "mock":
@@ -406,7 +369,6 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
     
     # Start IDLE connection to wait for push notifications
     _ensure_idle_connection(account, inbox)
-
     # Ensure sent emails are marked as is_sent
     from_addr = account.email or cfg.imap_user
     if from_addr:
@@ -414,10 +376,7 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
         for e in emails:
             if from_addr in e.sender.lower():
                 e.is_sent = True
-
     return emails
-
-
 def _stamp_account_email(email: Email, account: AccountConfig, inbox: str) -> None:
     email.account_id = account.id
     email.inbox = inbox
@@ -425,10 +384,7 @@ def _stamp_account_email(email: Email, account: AccountConfig, inbox: str) -> No
         email.id = f"{account.id}:{email.id}"
     if email.thread_id and not email.thread_id.startswith(f"{account.id}:"):
         email.thread_id = f"{account.id}:{email.thread_id}"
-
-
 _is_loaded = False
-
 def _ensure_loaded() -> None:
     """Populate the in-memory stores on first access."""
     global _is_loaded
@@ -467,7 +423,6 @@ def _ensure_loaded() -> None:
         
         # Always attempt to sync Graph calendar (it gracefully handles mock vs live)
         is_graph_active = True
-
         if not _calendar:
             _calendar.extend(load_events(cfg.data_dir / "calendar.json"))
             
@@ -483,7 +438,6 @@ def _ensure_loaded() -> None:
                     log.error("Failed to load db calendar event", extra={"error": str(exc), "event": db_ev.get("id")})
             for event in _calendar:
                 safe_store_calendar_event(event, source="mock")
-
         if is_graph_active:
             try:
                 from src.connectors.graph import graph, GraphAuthRequired
@@ -498,7 +452,6 @@ def _ensure_loaded() -> None:
                             end_str += "+00:00"
                         start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
                         end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-
                         event = CalendarEvent(
                             id=ev.get("id"),
                             title=ev.get("subject", "(no subject)"),
@@ -519,8 +472,6 @@ def _ensure_loaded() -> None:
                 log.warning("Graph sync skipped: Auth required.", extra={"error": str(exc)})
             except Exception as exc:
                 log.exception("graph_calendar_load_failed", extra={"error": str(exc)})
-
-
 def _load_emails_from_storage(inbox: str, *, account: AccountConfig | None = None) -> None:
     for payload in load_email_states(inbox=inbox):
         try:
@@ -541,8 +492,6 @@ def _load_emails_from_storage(inbox: str, *, account: AccountConfig | None = Non
         email.storage_origin = "db"
         _emails[email.id] = email
         _store_email_memory(email)
-
-
 def _merge_source_email(email: Email, *, source: str) -> None:
     """Merge a fresh source email into DB-seeded inbox state."""
     email.inbox = email.inbox or _current_inbox()
@@ -564,7 +513,6 @@ def _merge_source_email(email: Email, *, source: str) -> None:
                 delete_email_records(old_id)
             except Exception as exc:
                 log.error("Failed to delete duplicate synthetic email", extra={"error": str(exc)})
-
     cached = _emails.get(email.id)
     if cached is None and email.account_id and email.id.startswith(f"{email.account_id}:"):
         legacy_id = email.id.split(":", 1)[1]
@@ -593,8 +541,6 @@ def _merge_source_email(email: Email, *, source: str) -> None:
     _emails[email.id] = email
     safe_store_email(email, source=source)
     _store_email_memory(email)
-
-
 def _get_email(email_id: str) -> Email:
     _ensure_loaded()
     email = _emails.get(email_id)
@@ -614,12 +560,8 @@ def _get_email(email_id: str) -> Email:
                 
         raise HTTPException(status_code=404, detail=f"Email {email_id} not found")
     return email
-
-
 def _relevant_events(email: Email) -> list[CalendarEvent]:
     return get_upcoming_events(_calendar, email.timestamp)
-
-
 def _hydrate_email_state(email: Email) -> None:
     """Apply cached workflow state from encrypted storage onto source emails."""
     stored = load_email_state(email.id, inbox=email.inbox or _current_inbox())
@@ -636,8 +578,6 @@ def _hydrate_email_state(email: Email) -> None:
     email.is_starred = cached.is_starred
     email.labels = cached.labels
     email.storage_origin = "source+cache"
-
-
 def _persist_email_state(email: Email, *, source: str = "workflow") -> None:
     """Persist the latest email workflow state immediately and via audit records."""
     try:
@@ -646,8 +586,6 @@ def _persist_email_state(email: Email, *, source: str = "workflow") -> None:
         log.exception("email_state_persist_failed", extra={"email_id": email.id})
     _store_thread_state(email)
     _store_email_memory(email)
-
-
 def _store_thread_state(email: Email) -> None:
     classification = email.classification
     participants = sorted({email.sender, *email.recipients})
@@ -666,8 +604,6 @@ def _store_thread_state(email: Email) -> None:
         "updated_from": "api",
     }
     safe_store_thread_state(thread_id, payload)
-
-
 def _store_email_memory(email: Email) -> None:
     compact_body = " ".join(email.body.split())[:500]
     summary = PrivacyGateway().mask_text(compact_body).text
@@ -683,8 +619,6 @@ def _store_email_memory(email: Email) -> None:
             "has_draft": email.draft_reply is not None,
         },
     )
-
-
 def _sentiment_hint(text: str) -> str:
     lowered = text.lower()
     if any(word in lowered for word in ("urgent", "frustrated", "blocked", "escalat", "asap")):
@@ -692,8 +626,6 @@ def _sentiment_hint(text: str) -> str:
     if any(word in lowered for word in ("thanks", "appreciate", "great", "happy")):
         return "positive"
     return "neutral"
-
-
 def _normalize_email_load_mode(mode: str) -> str:
     normalized = mode.strip().lower().replace("-", "_")
     if normalized in {"source", "source_only"}:
@@ -701,19 +633,13 @@ def _normalize_email_load_mode(mode: str) -> str:
     if normalized in {"db", "db_only", "cache_only"}:
         return "db_only"
     return "db_then_source"
-
-
 def _current_inbox() -> str:
     cfg = get_settings()
     accounts = [account for account in load_accounts(cfg.data_dir) if account.is_active]
     if accounts:
         return account_inbox(accounts[0])
     return canonicalize_inbox(cfg.imap_user, fallback=f"imap:{cfg.imap_host}:{cfg.imap_mailbox}")
-
-
 # ---- Email Endpoints -------------------------------------------------------
-
-
 @router.get("/emails")
 async def list_emails(
     account_id: str | None = Query(None, description="Filter by account ID"),
@@ -724,24 +650,18 @@ async def list_emails(
     if account_id:
         emails = [e for e in emails if e.account_id == account_id]
     return [email.model_dump(mode="json") for email in emails]
-
-
 @router.get("/emails/{email_id}")
 async def get_email(email_id: str) -> dict[str, Any]:
     """Return a single email with full detail."""
     return _get_email(email_id).model_dump(mode="json")
-
-
 @router.get("/emails/{email_id}/thread")
 async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
     """Return all emails sharing the same conversation thread.
-
     Uses a graph-based approach: walk message_id, in_reply_to, and references
     transitively to find every email that belongs to the same conversation.
     """
     _ensure_loaded()
     anchor = _get_email(email_id)
-
     if anchor.account_id == "outlook" and anchor.thread_id:
         from src.connectors.graph import graph
         try:
@@ -763,17 +683,14 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
                 return thread
         except Exception as e:
             log.warning(f"Failed to fetch outlook thread {anchor.thread_id} from graph: {e}")
-
     # Build a lookup table: message_id → email
     by_msg_id: dict[str, Email] = {}
     for e in _emails.values():
         if e.message_id:
             by_msg_id[e.message_id] = e
-
     # Collect all message_ids that belong to this thread via union-find walk
     thread_msg_ids: set[str] = set()
     queue: list[str] = []
-
     # Seed the walk with the anchor email’s identifiers
     for seed_id in [anchor.message_id, anchor.in_reply_to, anchor.thread_id]:
         if seed_id and seed_id not in thread_msg_ids:
@@ -783,7 +700,6 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
         if ref not in thread_msg_ids:
             thread_msg_ids.add(ref)
             queue.append(ref)
-
     # BFS: for every message_id we know about, pull in its connections
     while queue:
         current = queue.pop()
@@ -798,7 +714,6 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
             if ref not in thread_msg_ids:
                 thread_msg_ids.add(ref)
                 queue.append(ref)
-
     # Collect matching emails: any email whose message_id, in_reply_to,
     # thread_id, or any reference is in the thread set
     thread_emails: dict[str, Email] = {anchor.id: anchor}
@@ -808,14 +723,12 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
         e_ids = {e.message_id, e.in_reply_to, e.thread_id} | set(e.references)
         if thread_msg_ids & e_ids:
             thread_emails[e.id] = e
-
     # Also match by simple thread_id equality (fallback for emails without
     # proper RFC headers, e.g. mock data)
     anchor_thread = anchor.thread_id or anchor.id
     for e in _emails.values():
         if e.id not in thread_emails and (e.thread_id or e.id) == anchor_thread:
             thread_emails[e.id] = e
-
     # Subject-based grouping fallback (mirrors frontend logic)
     def _normalize_subject(subject: str) -> str:
         if not subject:
@@ -834,12 +747,9 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
         for e in _emails.values():
             if e.id not in thread_emails and _normalize_subject(e.subject) == base_subj:
                 thread_emails[e.id] = e
-
     thread = [e.model_dump(mode="json") for e in thread_emails.values()]
     thread.sort(key=lambda e: e.get("timestamp", ""))
     return thread
-
-
 @router.post("/emails/{email_id}/classify")
 async def classify_email(
     email_id: str,
@@ -856,7 +766,6 @@ async def classify_email(
         return email.classification.model_dump(mode="json")
     result, resolved_date = await classifier.classify(email, _calendar)
     email.classification = result
-
     # ── Auto-create calendar event from meeting/action-required emails ───
     auto_event = classifier.extract_meeting_event(
         email, result, _calendar, resolved_date=resolved_date,
@@ -881,7 +790,6 @@ async def classify_email(
                     "event_start": auto_event.start.isoformat(),
                 },
             )
-
     safe_record_event(
         "email.classified",
         {
@@ -898,17 +806,12 @@ async def classify_email(
         email.id,
     )
     _persist_email_state(email)
-
     response = result.model_dump(mode="json")
     if auto_event:
         response["auto_event"] = auto_event.model_dump(mode="json")
     return response
-
-
 class DraftRequest(BaseModel):
     quality: str = "balanced"
-
-
 @router.post("/emails/{email_id}/draft")
 async def draft_email_reply(
     email_id: str,
@@ -916,7 +819,6 @@ async def draft_email_reply(
     force: bool = Query(False, description="Re-run the model even if cached"),
 ) -> dict[str, Any]:
     """Generate a draft reply for an email.
-
     The email must be classified first.
     """
     email = _get_email(email_id)
@@ -952,8 +854,6 @@ async def draft_email_reply(
     _log_activity("drafted", f"Draft reply generated for '{email.subject[:40]}'", email.id)
     _persist_email_state(email)
     return result.model_dump(mode="json")
-
-
 @router.post("/emails/{email_id}/approve")
 async def approve_draft(email_id: str) -> dict[str, Any]:
     """Approve the current draft reply and send via SMTP."""
@@ -963,7 +863,6 @@ async def approve_draft(email_id: str) -> dict[str, Any]:
             status_code=400,
             detail="No draft to approve. Generate a draft first.",
         )
-
     draft_body = email.draft_reply.body
     # Send the reply via the send-reply logic
     sent_email = _do_send_reply(
@@ -972,7 +871,6 @@ async def approve_draft(email_id: str) -> dict[str, Any]:
         to_addrs=None,
         cc_addrs=None,
     )
-
     log.info("draft_approved_and_sent", extra={"email_id": email_id})
     safe_record_event(
         "email.approved",
@@ -989,19 +887,13 @@ async def approve_draft(email_id: str) -> dict[str, Any]:
         "preview": draft_body[:80],
         "sent_email": sent_email.model_dump(mode="json"),
     }
-
-
 # ---- Send / Compose Endpoints -----------------------------------------------
-
-
 class SendReplyRequest(BaseModel):
     body: str
     to: list[str] | None = None
     cc: list[str] | None = None
     bcc: list[str] | None = None
     action: str = "reply"
-
-
 class ComposeRequest(BaseModel):
     to: list[str]
     cc: list[str] = []
@@ -1009,13 +901,9 @@ class ComposeRequest(BaseModel):
     subject: str
     body: str
     account_id: str
-
-
 class AIComposeRequest(BaseModel):
     prompt: str
     quality: str = "balanced"
-
-
 @router.post("/emails/ai-compose")
 async def handle_ai_compose(body: AIComposeRequest) -> dict[str, Any]:
     """Generate a completely new draft using AI."""
@@ -1025,8 +913,6 @@ async def handle_ai_compose(body: AIComposeRequest) -> dict[str, Any]:
         return {"draft": draft_text}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
 def _do_send_reply(
     original: Email,
     body: str,
@@ -1047,7 +933,6 @@ def _do_send_reply(
     )
     cfg = get_settings()
     account = _resolve_email_account(original)
-
     # Default recipients: reply to sender + original To (excluding ourselves)
     from_addr = resolve_smtp_settings(account)["from_addr"] if account.provider != "graph" else None
     if account.provider == "graph":
@@ -1070,13 +955,11 @@ def _do_send_reply(
             cc_addrs = []
             
     bcc_addrs = bcc_addrs or []
-
     from src.connectors.smtp import _normalize_subject_for_reply
     if action == "forward":
         reply_subject = f"Fwd: {original.subject}" if not original.subject.lower().startswith("fwd:") else original.subject
     else:
         reply_subject = _normalize_subject_for_reply(original.subject)
-
     # ── CRAZY DEBUGGING / HEURISTICS FIX ──────────────────────────────────
     # Gmail and some strict clients will break threads if the email is a
     # "naked reply" (i.e., it doesn't contain the quoted text of the previous
@@ -1086,11 +969,9 @@ def _do_send_reply(
         orig_date_str = original.timestamp.strftime("%a, %b %d, %Y at %I:%M %p")
     except Exception:
         orig_date_str = "recently"
-
     quoted_lines = [f"> {line}" for line in (original.body or "").splitlines()]
     quoted_text = "\n".join(quoted_lines)
     full_body = f"{body}\n\nOn {orig_date_str}, {original.sender} wrote:\n{quoted_text}"
-
     now = datetime.now(timezone.utc)
     
     def _ensure_brackets(val: str) -> str:
@@ -1100,10 +981,8 @@ def _do_send_reply(
         if not val.endswith(">"):
             val = val + ">"
         return val
-
     reply_to_msg_id = None
     refs = []
-
     # RFC-compliant Message-IDs always contain '@' (format: <unique@domain>).
     # Some mail servers (e.g. Elektrine/Haraka) replace the original Message-ID
     # with an internal UUID that has NO '@'. If we send In-Reply-To/References
@@ -1149,7 +1028,6 @@ def _do_send_reply(
     else:
         smtp_settings = resolve_smtp_settings(account)
         from_addr = smtp_settings["from_addr"]
-
         sent_msg_id = smtp_send_email(
             host=smtp_settings["host"],
             port=smtp_settings["port"],
@@ -1167,7 +1045,6 @@ def _do_send_reply(
             in_reply_to=reply_to_msg_id,
             references=refs,
         )
-
     # Create a sent Email record
     now = datetime.now(timezone.utc)
     sent_email = Email(
@@ -1192,8 +1069,6 @@ def _do_send_reply(
     safe_store_email(sent_email, source="sent")
     _store_email_memory(sent_email)
     return sent_email
-
-
 def _resolve_email_account(email: Email) -> AccountConfig:
     """Find the AccountConfig that owns this email."""
     cfg = get_settings()
@@ -1207,13 +1082,10 @@ def _resolve_email_account(email: Email) -> AccountConfig:
         if acc.is_active:
             return acc
     raise HTTPException(status_code=400, detail="No active email account configured.")
-
-
 @router.post("/emails/{email_id}/send-reply")
 async def send_reply(email_id: str, body: SendReplyRequest) -> dict[str, Any]:
     """Send a reply to an email via SMTP."""
     original = _get_email(email_id)
-
     try:
         sent_email = _do_send_reply(
             original=original,
@@ -1225,7 +1097,6 @@ async def send_reply(email_id: str, body: SendReplyRequest) -> dict[str, Any]:
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
     _log_activity("sent_reply", f"Reply sent for '{original.subject[:40]}'", original.id)
     safe_record_event(
         "email.reply_sent",
@@ -1237,8 +1108,6 @@ async def send_reply(email_id: str, body: SendReplyRequest) -> dict[str, Any]:
         subject_id=original.id,
     )
     return sent_email.model_dump(mode="json")
-
-
 @router.post("/emails/compose")
 async def compose_email(body: ComposeRequest) -> dict[str, Any]:
     """Compose and send a new email via SMTP."""
@@ -1247,7 +1116,6 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
     account = get_account(accounts, body.account_id)
     if account is None:
         raise HTTPException(status_code=404, detail=f"Account {body.account_id} not found")
-
     if account.provider == "graph":
         from src.connectors.graph import graph, USER_EMAIL
         from_addr = USER_EMAIL or account.email
@@ -1267,9 +1135,7 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
             smtp_settings = resolve_smtp_settings(account)
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
-
         from_addr = smtp_settings["from_addr"]
-
         try:
             sent_msg_id = smtp_send_email(
                 host=smtp_settings["host"],
@@ -1288,7 +1154,6 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
-
     now = datetime.now(timezone.utc)
     sent_email = Email(
         id=f"{account.id}:sent-{hashlib.sha256(sent_msg_id.encode()).hexdigest()[:12]}",
@@ -1320,8 +1185,6 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
         subject_id=sent_email.id,
     )
     return sent_email.model_dump(mode="json")
-
-
 @router.post("/emails/{email_id}/star")
 async def toggle_star(email_id: str) -> dict[str, Any]:
     """Toggle the starred state of an email."""
@@ -1329,8 +1192,6 @@ async def toggle_star(email_id: str) -> dict[str, Any]:
     email.is_starred = not email.is_starred
     _persist_email_state(email)
     return {"id": email.id, "is_starred": email.is_starred}
-
-
 @router.post("/emails/{email_id}/read")
 async def mark_as_read(email_id: str) -> dict[str, Any]:
     """Mark an email as read."""
@@ -1338,8 +1199,6 @@ async def mark_as_read(email_id: str) -> dict[str, Any]:
     email.is_read = True
     _persist_email_state(email)
     return {"id": email.id, "is_read": email.is_read}
-
-
 @router.post("/emails/classify-all")
 async def classify_all(
     account_id: str | None = Query(None, description="Classify only one account"),
@@ -1370,8 +1229,6 @@ async def classify_all(
     if results:
         _log_activity("batch_classified", f"Batch classified {len(results)} emails")
     return results
-
-
 @router.post("/emails/refresh")
 async def refresh_emails() -> dict[str, Any]:
     """Trigger an immediate IMAP sync for new emails without clearing the cache."""
@@ -1391,23 +1248,17 @@ async def refresh_emails() -> dict[str, Any]:
         
     _log_activity("refreshed", f"Inbox synced — {emails_added} new emails fetched")
     return {"status": "refreshed", "new_count": emails_added, "total_count": len(_emails)}
-
-
 # ---- Dashboard Endpoints ---------------------------------------------------
-
-
 @router.get("/dashboard")
 async def get_dashboard() -> dict[str, Any]:
     """Return aggregated dashboard statistics and AI-generated notifications."""
     _ensure_loaded()
     _generate_notifications()
-
     emails = list(_emails.values())
     total = len(emails)
     unread = sum(1 for e in emails if not e.is_read)
     classified = sum(1 for e in emails if e.classification)
     starred = sum(1 for e in emails if e.is_starred)
-
     priority_breakdown: dict[str, int] = {}
     category_breakdown: dict[str, int] = {}
     for e in emails:
@@ -1416,7 +1267,6 @@ async def get_dashboard() -> dict[str, Any]:
             c = e.classification.category.value
             priority_breakdown[p] = priority_breakdown.get(p, 0) + 1
             category_breakdown[c] = category_breakdown.get(c, 0) + 1
-
     cfg = get_settings()
     accounts = list_accounts_summary(load_accounts(cfg.data_dir))
     for account in accounts:
@@ -1425,7 +1275,6 @@ async def get_dashboard() -> dict[str, Any]:
         account["unread_count"] = sum(1 for e in account_emails if not e.is_read)
     now = datetime.now(timezone.utc)
     upcoming = get_upcoming_events(_calendar, now, window_days=7)
-
     stats = DashboardStats(
         total_emails=total,
         unread_count=unread,
@@ -1440,16 +1289,12 @@ async def get_dashboard() -> dict[str, Any]:
         storage_stats=storage_stats(),
     )
     return stats.model_dump(mode="json")
-
-
 @router.get("/notifications")
 async def get_notifications() -> list[dict[str, Any]]:
     """Return current AI-generated notifications."""
     _ensure_loaded()
     _generate_notifications()
     return [n.model_dump(mode="json") for n in _notifications]
-
-
 @router.post("/notifications/{notif_id}/dismiss")
 async def dismiss_notification(notif_id: str) -> dict[str, str]:
     """Dismiss a notification."""
@@ -1459,18 +1304,12 @@ async def dismiss_notification(notif_id: str) -> dict[str, str]:
             _notifications.pop(i)
             return {"status": "dismissed"}
     return {"status": "dismissed"}
-
-
 # ---- Account Endpoints -----------------------------------------------------
-
-
 @router.get("/accounts")
 async def list_accounts() -> list[dict[str, Any]]:
     """Return configured email accounts (no credentials)."""
     cfg = get_settings()
     return list_accounts_summary(load_accounts(cfg.data_dir))
-
-
 class AccountCreate(BaseModel):
     name: str
     email: str
@@ -1489,8 +1328,6 @@ class AccountCreate(BaseModel):
     smtp_use_tls: bool = True
     color: str = "#3b82f6"
     is_active: bool = True
-
-
 class AccountUpdate(BaseModel):
     name: str | None = None
     email: str | None = None
@@ -1509,8 +1346,6 @@ class AccountUpdate(BaseModel):
     smtp_use_tls: bool | None = None
     color: str | None = None
     is_active: bool | None = None
-
-
 @router.post("/accounts")
 async def create_account(body: AccountCreate) -> dict[str, Any]:
     cfg = get_settings()
@@ -1524,8 +1359,6 @@ async def create_account(body: AccountCreate) -> dict[str, Any]:
     _emails.clear()
     _log_activity("account_created", f"Account '{account.name}' added", account.id)
     return list_accounts_summary([account])[0]
-
-
 @router.put("/accounts/{account_id}")
 async def update_account(account_id: str, body: AccountUpdate) -> dict[str, Any]:
     cfg = get_settings()
@@ -1544,8 +1377,6 @@ async def update_account(account_id: str, body: AccountUpdate) -> dict[str, Any]
     _emails.clear()
     _log_activity("account_updated", f"Account '{updated.name}' updated", updated.id)
     return list_accounts_summary([updated])[0]
-
-
 @router.delete("/accounts/{account_id}")
 async def delete_account(account_id: str) -> dict[str, str]:
     cfg = get_settings()
@@ -1557,8 +1388,6 @@ async def delete_account(account_id: str) -> dict[str, str]:
     _emails.clear()
     _log_activity("account_deleted", f"Account '{account_id}' removed", account_id)
     return {"status": "deleted", "account_id": account_id}
-
-
 def _new_account_id(accounts: list[AccountConfig], email: str) -> str:
     base = canonicalize_inbox(email, fallback="account").split("@")[0] or "account"
     candidate = "".join(ch if ch.isalnum() else "-" for ch in base.lower()).strip("-")[:24] or "account"
@@ -1569,18 +1398,12 @@ def _new_account_id(accounts: list[AccountConfig], email: str) -> str:
     while f"{candidate}-{suffix}" in existing:
         suffix += 1
     return f"{candidate}-{suffix}"
-
-
 # ---- Calendar Endpoints ----------------------------------------------------
-
-
 @router.get("/calendar")
 async def get_calendar() -> list[dict[str, Any]]:
     """Return all calendar events."""
     _ensure_loaded()
     return [ev.model_dump(mode="json") for ev in _calendar]
-
-
 @router.get("/calendar/upcoming")
 async def get_upcoming_calendar(
     days: int = Query(7, ge=1, le=90),
@@ -1590,8 +1413,6 @@ async def get_upcoming_calendar(
     now = datetime.now(timezone.utc)
     upcoming = get_upcoming_events(_calendar, now, window_days=days)
     return [ev.model_dump(mode="json") for ev in upcoming]
-
-
 class CalendarEventCreate(BaseModel):
     title: str
     start: str
@@ -1602,17 +1423,13 @@ class CalendarEventCreate(BaseModel):
     attendees: list[str] = []
     is_all_day: bool = False
     sync_to_graph: bool = False
-
-
 @router.post("/calendar/events")
 async def create_calendar_event(body: CalendarEventCreate) -> dict[str, Any]:
     """Create a new local calendar event."""
     _ensure_loaded()
-
     event_data = body.model_dump()
     # Remove sync_to_graph from the event_data before local save since it's not part of CalendarEvent model
     event_data.pop("sync_to_graph", None)
-
     # Sync to Graph if active and requested
     is_graph_active = True
     if is_graph_active and body.sync_to_graph:
@@ -1636,13 +1453,10 @@ async def create_calendar_event(body: CalendarEventCreate) -> dict[str, Any]:
             event_data["account_id"] = "graph"
         except Exception as e:
             log.exception("graph_calendar_create_failed", extra={"error": str(e)})
-
     event = create_event(_calendar, event_data)
     safe_store_calendar_event(event, source="user")
     _log_activity("event_created", f"Calendar event '{event.title}' created", event.id)
     return event.model_dump(mode="json")
-
-
 class CalendarEventUpdate(BaseModel):
     title: str | None = None
     start: str | None = None
@@ -1652,8 +1466,6 @@ class CalendarEventUpdate(BaseModel):
     color: str | None = None
     attendees: list[str] | None = None
     is_all_day: bool | None = None
-
-
 @router.put("/calendar/events/{event_id}")
 async def update_calendar_event(
     event_id: str,
@@ -1667,8 +1479,6 @@ async def update_calendar_event(
         raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
     safe_store_calendar_event(updated, source="user")
     return updated.model_dump(mode="json")
-
-
 @router.delete("/calendar/events/{event_id}")
 async def delete_calendar_event(event_id: str) -> dict[str, str]:
     """Delete a calendar event."""
@@ -1684,23 +1494,19 @@ async def delete_calendar_event(event_id: str) -> dict[str, str]:
             pass
         except Exception as e:
             log.warning(f"Failed to delete graph event {event_id}: {e}")
-
     if not delete_event(_calendar, event_id):
         raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
     safe_delete_calendar_event_record(event_id)
     return {"status": "deleted", "event_id": event_id}
-
 @router.post("/calendar/sync")
 async def sync_calendar() -> dict[str, Any]:
     """Force a sync from Microsoft Graph."""
     _ensure_loaded()
     is_graph_active = True
-
     if not is_graph_active:
         log.info("Calendar sync skipped: Graph is not active")
         print("--- CALENDAR SYNC SKIPPED: Graph account not active ---")
         return {"status": "skipped", "message": "Graph is not active"}
-
     try:
         log.info("Starting calendar sync from Microsoft Graph...")
         print("--- STARTING CALENDAR SYNC FROM GRAPH ---")
@@ -1710,7 +1516,6 @@ async def sync_calendar() -> dict[str, Any]:
         # Remove old graph events
         global _calendar
         _calendar[:] = [ev for ev in _calendar if ev.account_id != "graph" and ev.account_id != "testing"]
-
         count = 0
         for ev in raw_events:
             try:
@@ -1722,7 +1527,6 @@ async def sync_calendar() -> dict[str, Any]:
                     end_str += "+00:00"
                 start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
                 end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-
                 event = CalendarEvent(
                     id=ev.get("id"),
                     title=ev.get("subject", "(no subject)"),
@@ -1751,21 +1555,14 @@ async def sync_calendar() -> dict[str, Any]:
         log.error(f"Calendar sync failed: {exc}")
         print(f"--- CALENDAR SYNC FAILED: {exc} ---")
         raise HTTPException(status_code=502, detail=str(exc))
-
-
 # ---- AI Endpoints (stub for orchestration phase) ---------------------------
-
-
 class AskAIRequest(BaseModel):
     question: str
     context_type: str | None = None  # "email", "thread", "general"
     context_id: str | None = None    # email_id or thread_id
-
-
 @router.post("/ai/ask")
 async def ask_ai(body: AskAIRequest) -> dict[str, Any]:
     """Ask the AI a question about an email, thread, or general topic.
-
     This is a stub endpoint — full orchestration is wired in the next phase.
     """
     return {
@@ -1778,17 +1575,60 @@ async def ask_ai(body: AskAIRequest) -> dict[str, Any]:
         "context_id": body.context_id,
         "status": "stub",
     }
-
-
+# ---- Attachment Endpoints (appended) ---------------------------------------
+@router.get("/attachments/download")
+async def download_attachment(
+    email_id: str = Query(..., description="Email ID"),
+    filename: str = Query(..., description="Attachment filename"),
+):
+    """Download a saved attachment file by email ID and filename.
+    Uses query params so that email IDs containing colons
+    (e.g. 'account:INBOX:12345:42') are handled correctly.
+    """
+    _ensure_loaded()
+    email = _emails.get(email_id)
+    if email is None:
+        raise HTTPException(status_code=404, detail=f"Email {email_id} not found")
+    att = None
+    for a in email.attachments:
+        if a.filename == filename:
+            att = a
+            break
+    if att is None or not att.stored_path:
+        raise HTTPException(status_code=404, detail=f"Attachment '{filename}' not found")
+    cfg = get_settings()
+    file_path = cfg.data_dir / att.stored_path
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Attachment file missing from disk")
+    return FileResponse(
+        path=str(file_path),
+        media_type=att.content_type,
+        filename=att.filename,
+        headers={"Content-Disposition": f'attachment; filename="{att.filename}"'},
+    )
+@router.get("/emails/{email_id}/attachments")
+async def list_attachments(email_id: str) -> list[dict[str, Any]]:
+    """Return attachment metadata (with download URLs) for a given email."""
+    email = _get_email(email_id)
+    results = []
+    for att in email.attachments:
+        results.append({
+            "filename": att.filename,
+            "content_type": att.content_type,
+            "size": att.size,
+            "has_file": att.stored_path is not None,
+            "download_url": (
+                f"/api/attachments/download"
+                f"?email_id={email_id}"
+                f"&filename={att.filename}"
+            ) if att.stored_path else None,
+        })
+    return results
 # ---- Storage Endpoints -----------------------------------------------------
-
-
 @router.get("/storage/stats")
 async def get_storage_stats() -> dict[str, Any]:
     """Return current storage row counts."""
     return storage_stats()
-
-
 @router.delete("/storage/emails/{email_id}")
 async def wipe_email_storage(email_id: str) -> dict[str, Any]:
     """Delete storage rows for one email and reset in-memory state."""
@@ -1797,8 +1637,6 @@ async def wipe_email_storage(email_id: str) -> dict[str, Any]:
         _emails[email_id].classification = None
         _emails[email_id].draft_reply = None
     return {"status": "deleted", "email_id": email_id, "deleted": deleted}
-
-
 @router.delete("/storage")
 async def wipe_all_storage() -> dict[str, Any]:
     """Delete all storage rows and reset in-memory workflow state."""
