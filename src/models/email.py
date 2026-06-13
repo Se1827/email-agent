@@ -48,6 +48,7 @@ class Email(BaseModel):
     sender: str
     recipients: list[str]
     cc: list[str] = Field(default_factory=list)
+    bcc: list[str] = Field(default_factory=list)
     subject: str
     body: str
     timestamp: datetime

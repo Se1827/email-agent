@@ -950,11 +950,14 @@ class SendReplyRequest(BaseModel):
     body: str
     to: list[str] | None = None
     cc: list[str] | None = None
+    bcc: list[str] | None = None
+    action: str = "reply"
 
 
 class ComposeRequest(BaseModel):
     to: list[str]
     cc: list[str] = []
+    bcc: list[str] = []
     subject: str
     body: str
     account_id: str
@@ -981,6 +984,8 @@ def _do_send_reply(
     body: str,
     to_addrs: list[str] | None,
     cc_addrs: list[str] | None,
+    bcc_addrs: list[str] | None = None,
+    action: str = "reply",
 ) -> Email:
     """Core logic for sending a reply — used by both send-reply and approve."""
     # ── DIAGNOSTIC: dump EVERYTHING about the original email ──
@@ -998,13 +1003,28 @@ def _do_send_reply(
     # Default recipients: reply to sender + original To (excluding ourselves)
     from_addr = resolve_smtp_settings(account)["from_addr"] if account.provider != "graph" else account.email
     if to_addrs is None:
-        all_addrs = [original.sender] + original.recipients
-        to_addrs = [a for a in dict.fromkeys(all_addrs) if a.lower() != from_addr.lower()]
+        if action == "reply_all":
+            all_addrs = [original.sender] + original.recipients
+            to_addrs = [a for a in dict.fromkeys(all_addrs) if a.lower() != from_addr.lower()]
+        elif action == "forward":
+            to_addrs = []
+        else:
+            # Standard reply: only to the sender
+            to_addrs = [original.sender]
+            
     if cc_addrs is None:
-        cc_addrs = [a for a in original.cc if a.lower() != from_addr.lower()]
+        if action == "reply_all":
+            cc_addrs = [a for a in original.cc if a.lower() != from_addr.lower()]
+        else:
+            cc_addrs = []
+            
+    bcc_addrs = bcc_addrs or []
 
     from src.connectors.smtp import _normalize_subject_for_reply
-    reply_subject = _normalize_subject_for_reply(original.subject)
+    if action == "forward":
+        reply_subject = f"Fwd: {original.subject}" if not original.subject.lower().startswith("fwd:") else original.subject
+    else:
+        reply_subject = _normalize_subject_for_reply(original.subject)
 
     # ── CRAZY DEBUGGING / HEURISTICS FIX ──────────────────────────────────
     # Gmail and some strict clients will break threads if the email is a
@@ -1041,7 +1061,10 @@ def _do_send_reply(
     # Fix: detect corrupted IDs and SKIP threading headers entirely — Gmail
     # will fall back to subject+participant-based threading which works.
     raw_mid = original.message_id or ""
-    if "@" in raw_mid:
+    if action == "forward":
+        # Forwards break the thread and do not include In-Reply-To
+        log.warning("smtp_reply_thread_headers | FORWARD | Skipping threading headers")
+    elif "@" in raw_mid:
         # Valid RFC Message-ID — safe to use for threading
         reply_to_msg_id = _ensure_brackets(raw_mid)
         refs = [_ensure_brackets(r) for r in original.references if r and "@" in r]
@@ -1065,9 +1088,10 @@ def _do_send_reply(
         graph.send_message(
             to=to_addrs,
             cc=cc_addrs,
+            bcc=bcc_addrs,
             subject=reply_subject,
             body_html=full_body,
-            reply_to_id=raw_msg_id
+            reply_to_id=raw_msg_id if action != "forward" else None
         )
         # Graph handles threading. We create a local sent email to show immediately.
         sent_msg_id = f"graph-sent-{uuid4().hex[:12]}"
@@ -1086,6 +1110,7 @@ def _do_send_reply(
             from_name=smtp_settings["from_name"],
             to_addrs=to_addrs,
             cc_addrs=cc_addrs,
+            bcc_addrs=bcc_addrs,
             subject=reply_subject,
             body=full_body,
             in_reply_to=reply_to_msg_id,
@@ -1101,10 +1126,11 @@ def _do_send_reply(
         sender=from_addr,
         recipients=to_addrs,
         cc=cc_addrs,
+        bcc=bcc_addrs,
         subject=reply_subject,
         body=body,
         timestamp=now,
-        thread_id=original.thread_id or original.message_id or original.id,
+        thread_id=(original.thread_id or original.message_id or original.id) if action != "forward" else sent_msg_id,
         message_id=sent_msg_id,
         in_reply_to=reply_to_msg_id,
         references=refs,
@@ -1143,6 +1169,8 @@ async def send_reply(email_id: str, body: SendReplyRequest) -> dict[str, Any]:
             body=body.body,
             to_addrs=body.to,
             cc_addrs=body.cc,
+            bcc_addrs=body.bcc,
+            action=body.action,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -1176,6 +1204,7 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
             graph.send_message(
                 to=body.to,
                 cc=body.cc or [],
+                bcc=body.bcc or [],
                 subject=body.subject,
                 body_html=body.body
             )
@@ -1201,7 +1230,8 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
                 from_addr=from_addr,
                 from_name=smtp_settings["from_name"],
                 to_addrs=body.to,
-                cc_addrs=body.cc or [],
+                cc_addrs=body.cc,
+                bcc_addrs=body.bcc,
                 subject=body.subject,
                 body=body.body,
             )
@@ -1215,7 +1245,8 @@ async def compose_email(body: ComposeRequest) -> dict[str, Any]:
         account_id=account.id,
         sender=from_addr,
         recipients=body.to,
-        cc=body.cc or [],
+        cc=body.cc,
+        bcc=body.bcc,
         subject=body.subject,
         body=body.body,
         timestamp=now,
