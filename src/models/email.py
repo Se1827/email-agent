@@ -1,43 +1,37 @@
 """Pydantic data models for emails, classifications, drafts, and calendar events."""
-
 from __future__ import annotations
-
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-
 from pydantic import BaseModel, Field
-
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
-
 class Priority(str, Enum):
     CRITICAL = "critical"
     HIGH = "high"
     NORMAL = "normal"
     LOW = "low"
-
-
 class Category(str, Enum):
     MEETING = "meeting"
     DEADLINE = "deadline"
     INFO = "info"
     ACTION_REQUIRED = "action-required"
     SPAM = "spam"
-
-
 class DraftQuality(str, Enum):
     QUICK = "quick"
     BALANCED = "balanced"
     THOROUGH = "thorough"
-
-
 # ---------------------------------------------------------------------------
 # Core models
 # ---------------------------------------------------------------------------
-
+class Attachment(BaseModel):
+    """Metadata for a single email attachment."""
+    filename: str
+    content_type: str = "application/octet-stream"
+    size: int = 0  # bytes
+    # Relative path under data/attachments/ (filled after save to disk).
+    stored_path: Optional[str] = None
 class Email(BaseModel):
     # Format: {account_id}:{mailbox}:{uidvalidity}:{uid}
     id: str
@@ -54,43 +48,34 @@ class Email(BaseModel):
     html_body: Optional[str] = None
     timestamp: datetime
     thread_id: Optional[str] = None
-
     # RFC-2822 threading headers.
     message_id: Optional[str] = None
     in_reply_to: Optional[str] = None
     references: list[str] = Field(default_factory=list)
-
     # Sent flag — True for emails sent from this client.
     is_sent: bool = False
-
     # UI state.
     is_read: bool = False
     is_starred: bool = False
     labels: list[str] = Field(default_factory=list)
-
+    attachments: list[Attachment] = Field(default_factory=list)
     # Populated after classification.
     classification: Optional[Classification] = None
     # Populated after draft generation.
     draft_reply: Optional[DraftReply] = None
     # Internal UI/debug hint: db, source, source+cache, or source-updated.
     storage_origin: Optional[str] = None
-
-
 class Classification(BaseModel):
     priority: Priority
     category: Category
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = ""
-
-
 class DraftReply(BaseModel):
     body: str
     tone: str = "professional"
     quality: str = "balanced"
     pii_redacted: bool = False
     redacted_types: list[str] = Field(default_factory=list)
-
-
 class CalendarEvent(BaseModel):
     id: Optional[str] = None
     title: str
@@ -103,8 +88,6 @@ class CalendarEvent(BaseModel):
     account_id: Optional[str] = None
     is_all_day: bool = False
     recurrence: Optional[str] = None
-
-
 class Notification(BaseModel):
     id: str
     type: str  # "deadline", "meeting_soon", "urgent_email", "ai_insight"
@@ -115,8 +98,6 @@ class Notification(BaseModel):
     related_type: Optional[str] = None  # "email" or "event"
     timestamp: datetime
     is_read: bool = False
-
-
 class DashboardStats(BaseModel):
     total_emails: int = 0
     unread_count: int = 0
@@ -129,8 +110,6 @@ class DashboardStats(BaseModel):
     notifications: list[dict] = Field(default_factory=list)
     recent_activity: list[dict] = Field(default_factory=list)
     storage_stats: dict = Field(default_factory=dict)
-
-
 class AccountConfig(BaseModel):
     id: str
     name: str
@@ -151,8 +130,6 @@ class AccountConfig(BaseModel):
     smtp_use_tls: bool = True    # STARTTLS (port 587)
     color: str = "#3b82f6"
     is_active: bool = True
-
-
 class SyncState(BaseModel):
     account_id: str
     mailbox: str
@@ -160,7 +137,5 @@ class SyncState(BaseModel):
     last_uid: int
     highestmodseq: int = 0
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
 # Rebuild Email so the forward references resolve.
 Email.model_rebuild()
