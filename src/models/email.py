@@ -34,6 +34,15 @@ class DraftQuality(str, Enum):
     THOROUGH = "thorough"
 
 
+class Attachment(BaseModel):
+    """Metadata for a single email attachment."""
+    filename: str
+    content_type: str = "application/octet-stream"
+    size: int = 0  # bytes
+    # Relative path under data/attachments/ (filled after save to disk).
+    stored_path: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Core models
 # ---------------------------------------------------------------------------
@@ -51,7 +60,6 @@ class Email(BaseModel):
     bcc: list[str] = Field(default_factory=list)
     subject: str
     body: str
-    html_body: Optional[str] = None
     timestamp: datetime
     thread_id: Optional[str] = None
 
@@ -62,6 +70,9 @@ class Email(BaseModel):
 
     # Sent flag — True for emails sent from this client.
     is_sent: bool = False
+
+    # Attachments parsed from MIME parts.
+    attachments: list[Attachment] = Field(default_factory=list)
 
     # UI state.
     is_read: bool = False
