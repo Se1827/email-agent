@@ -3,6 +3,25 @@ import { formatDate, formatSender, senderColor } from '../utils';
 import { toggleStar, fetchEmail } from '../api';
 import './EmailList.css';
 
+export function cleanSnippet(text, maxLength = 90) {
+    if (!text) return '';
+    const trimmed = text.trim();
+    if (
+        trimmed.startsWith('<!DOCTYPE html') ||
+        trimmed.startsWith('<html') ||
+        /<\/?[a-z][\s\S]*>/i.test(text)
+    ) {
+        const clean = text
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return clean.slice(0, maxLength);
+    }
+    return text.slice(0, maxLength).replace(/\n/g, ' ');
+}
+
 function normalizeSubject(subject) {
     if (!subject) return "";
     let s = subject.trim();
@@ -177,7 +196,7 @@ function EmailList({ emails, selected, onSelect, loading }) {
                                 </div>
                                 <div className="email-row-bottom">
                                     <span className="email-snippet">
-                                        {email.body.slice(0, 90).replace(/\n/g, ' ')}
+                                        {cleanSnippet(email.body, 90)}
                                     </span>
                                     <div className="email-row-tags">
                                         {cls && (

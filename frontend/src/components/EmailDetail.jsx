@@ -8,6 +8,8 @@ import {
   markAsRead, fetchThread, sendReply
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
+import { EmailBodyRenderer } from './EmailBodyRenderer';
+import { cleanSnippet } from './EmailList';
 import './EmailDetail.css';
 
 const QUALITY_OPTIONS = [
@@ -33,7 +35,7 @@ function ThreadMessage({ msg, isExpanded, onToggle, isLatest }) {
                         </span>
                         {!isExpanded && (
                             <span className="thread-msg-snippet">
-                                {msg.body.slice(0, 100).replace(/\n/g, ' ')}
+                                {cleanSnippet(msg.body, 100)}
                             </span>
                         )}
                     </div>
@@ -53,7 +55,7 @@ function ThreadMessage({ msg, isExpanded, onToggle, isLatest }) {
                         )}
                         <span className="thread-msg-detail">{formatFullDate(msg.timestamp)}</span>
                     </div>
-                    <pre className="email-body-text">{msg.body}</pre>
+                    <EmailBodyRenderer text={msg.body_html || msg.body} />
                 </div>
             )}
         </div>
@@ -445,7 +447,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                 <span className="detail-date">{formatFullDate(email.timestamp)}</span>
                             </div>
                         </div>
-                        <pre className="email-body-text">{email.body}</pre>
+                        <EmailBodyRenderer text={email.body_html || email.body} />
                     </div>
                 )}
 

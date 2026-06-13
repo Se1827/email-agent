@@ -6,6 +6,7 @@ import {
   WifiOff, MoreHorizontal, Search, X, Loader2, Sparkles,
   Tag, FileText, Zap, CalendarPlus
 } from 'lucide-react';
+import { EmailBodyRenderer } from '../components/EmailBodyRenderer';
 import './OutlookPage.css';
 
 const API = '/api/graph';
@@ -415,8 +416,8 @@ function MailTab() {
                             </span>
                           </div>
                         </div>
-                        <div className="ol-thread-message-body" style={{ whiteSpace: 'pre-wrap' }}>
-                          {msg.body || msg.snippet}
+                        <div className="ol-thread-message-body">
+                          <EmailBodyRenderer text={msg.body_html || msg.body || msg.snippet} />
                         </div>
                       </div>
                     );

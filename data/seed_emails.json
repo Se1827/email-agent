@@ -16,7 +16,7 @@
         "recipients": [
             "you@company.com"
         ],
-        "subject": "Quarterly OKR review — deadline Friday",
+        "subject": "Quarterly OKR review \u2014 deadline Friday",
         "body": "Hi,\n\nJust a reminder that the OKR self-assessment is due this Friday (May 9). Please fill in your progress against each key result in the shared Google Sheet and send me a brief summary by EOD Thursday so I can consolidate before the leadership sync.\n\nThanks.",
         "timestamp": "2026-05-07T10:15:00+05:30",
         "thread_id": "t002"
@@ -39,7 +39,7 @@
             "you@company.com",
             "team@company.com"
         ],
-        "subject": "Re: Sprint planning — moved to Wednesday",
+        "subject": "Re: Sprint planning \u2014 moved to Wednesday",
         "body": "Hi all,\n\nSprint planning has been moved from Tuesday to Wednesday 2 PM. Same Zoom link.\n\nPlease update your calendars. I have sent an updated invite.\n\nThanks,\nRaj",
         "timestamp": "2026-05-07T09:00:00+05:30",
         "thread_id": "t003"
@@ -61,7 +61,7 @@
         "recipients": [
             "you@company.com"
         ],
-        "subject": "Invoice #4821 — payment details",
+        "subject": "Invoice #4821 \u2014 payment details",
         "body": "Hi,\n\nPlease find the payment details for invoice #4821:\n\nAmount: $12,500.00\nBank: First National Bank\nAccount: 9283-7461-0023\nRouting: 021000021\n\nLet me know once the transfer is initiated. We need this processed before end of week.\n\nRegards,\nSarah",
         "timestamp": "2026-05-18T20:00:00+05:30",
         "thread_id": "t004"
@@ -84,8 +84,52 @@
             "you@company.com"
         ],
         "subject": "Code review request: auth-service PR #312",
-        "body": "Hey,\n\nCould you review my PR for the auth-service refactor? It is a fairly contained change — just swapping the JWT library and updating the middleware.\n\nPR link: https://github.com/company/auth-service/pull/312\n\nNo rush, but would be great to get it merged before the Wednesday sprint.\n\nCheers,\nDeepak",
+        "body": "Hey,\n\nCould you review my PR for the auth-service refactor? It is a fairly contained change \u2014 just swapping the JWT library and updating the middleware.\n\nPR link: https://github.com/company/auth-service/pull/312\n\nNo rush, but would be great to get it merged before the Wednesday sprint.\n\nCheers,\nDeepak",
         "timestamp": "2026-05-07T11:30:00+05:30",
         "thread_id": "t005"
+    },
+    {
+        "id": "e009",
+        "sender": "reports@company.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Project Alpha - Weekly Performance Review",
+        "body": "<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    .container { font-family: Arial, sans-serif; padding: 20px; color: #333333; }\n    .header { background-color: #0078d4; color: white; padding: 15px; border-radius: 4px; }\n    .content { margin-top: 20px; }\n    table { width: 100%; border-collapse: collapse; margin-top: 15px; }\n    th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; }\n    tr:nth-child(even) { background-color: #f2f2f2; }\n    .btn { display: inline-block; background-color: #2563eb; color: white !important; padding: 8px 16px; text-decoration: none !important; border-radius: 4px; margin-top: 15px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h2>Project Alpha - Weekly Performance Review</h2>\n    </div>\n    <div class=\"content\">\n      <p>Dear Team,</p>\n      <p>Here is the weekly summary for <strong>Project Alpha</strong>. Please review the performance metrics below:</p>\n      <table>\n        <tr>\n          <th>Metric</th>\n          <th>Target</th>\n          <th>Actual</th>\n          <th>Status</th>\n        </tr>\n        <tr>\n          <td>API Response Time</td>\n          <td>&lt; 200ms</td>\n          <td>180ms</td>\n          <td style=\"color: green; font-weight: bold;\">PASS</td>\n        </tr>\n        <tr>\n          <td>Uptime</td>\n          <td>99.9%</td>\n          <td>99.95%</td>\n          <td style=\"color: green; font-weight: bold;\">PASS</td>\n        </tr>\n        <tr>\n          <td>Error Rate</td>\n          <td>&lt; 0.5%</td>\n          <td>1.2%</td>\n          <td style=\"color: red; font-weight: bold;\">WARN</td>\n        </tr>\n      </table>\n      <p>For more detailed logs, you can access the dashboard here: <a href=\"https://dashboard.company.com/alpha\">https://dashboard.company.com/alpha</a></p>\n      <a href=\"https://dashboard.company.com/alpha/reports\" class=\"btn\">View Full Report</a>\n    </div>\n  </div>\n</body>\n</html>",
+        "timestamp": "2026-05-07T15:00:00+05:30",
+        "thread_id": "t006"
+    },
+    {
+        "id": "e010",
+        "sender": "you@company.com",
+        "recipients": [
+            "deepak.verma@company.com"
+        ],
+        "subject": "Re: Code review request: auth-service PR #312",
+        "body": "Hey Deepak,\n\nSwapping JWT libraries sounds like a great move. I have reviewed the code, but can we double check the devops configuration?\n\nBest,\nMe\n\nOn Thu, Jun 11, 2026 at 2:00 PM Deepak Verma <deepak.verma@company.com> wrote:\n> Hey,\n>\n> I just got confirmation from DevOps to proceed. Here is the message:\n>\n> ---------- Forwarded message ---------\n> From: DevOps Team <devops@company.com>\n> Date: Fri, Jun 12, 2026 at 4:15 PM\n> Subject: Notice: Swapping JWT libraries\n> To: Deepak Verma <deepak.verma@company.com>\n>\n> Hi Deepak,\n>\n> As discussed, please make sure the auth-service migrates to PyJWT.\n>\n> Thanks,\n> DevOps\n>\n> On Thu, Jun 11, 2026 at 1:30 PM You <you@company.com> wrote:\n>> Let me know when you've run the tests.\n>>\n>> Thanks!",
+        "timestamp": "2026-05-07T12:00:00+05:30",
+        "thread_id": "t005"
+    },
+    {
+        "id": "e011",
+        "sender": "student@internshala.com",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Vellaration Technologies is hiring Sales and Marketing intern and your profile matches",
+        "body": "<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    .container {\n      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n      max-width: 600px;\n      margin: 0 auto;\n      border: 1px solid #e2e8f0;\n      border-radius: 8px;\n      overflow: hidden;\n      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);\n    }\n    .banner-img {\n      width: 100%;\n      height: auto;\n      display: block;\n    }\n    .content {\n      padding: 24px;\n      background-color: #ffffff;\n      color: #2d3748;\n    }\n    .logo-header {\n      text-align: center;\n      margin-bottom: 20px;\n    }\n    .card {\n      background-color: #f7fafc;\n      border: 1px solid #edf2f7;\n      border-radius: 6px;\n      padding: 20px;\n      margin-top: 20px;\n      text-align: center;\n    }\n    .badge {\n      display: inline-block;\n      background-color: #ebf8ff;\n      color: #2b6cb0;\n      font-size: 12px;\n      font-weight: bold;\n      padding: 4px 8px;\n      border-radius: 4px;\n      margin-bottom: 12px;\n    }\n    .btn {\n      display: inline-block;\n      background-color: #1a202c;\n      color: #ffffff !important;\n      text-decoration: none;\n      padding: 12px 24px;\n      border-radius: 6px;\n      font-weight: 600;\n      margin-top: 16px;\n    }\n    .footer {\n      padding: 16px;\n      text-align: center;\n      font-size: 12px;\n      color: #a0aec0;\n      background-color: #f7fafc;\n      border-top: 1px solid #edf2f7;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"logo-header\">\n      <h3 style=\"color: #0078d4; margin: 15px 0;\">INTERNSHALA</h3>\n    </div>\n    <img src=\"http://localhost:5173/hiring_banner.png\" class=\"banner-img\" alt=\"Hiring Banner\">\n    <div class=\"content\">\n      <h2 style=\"margin-top: 0; color: #1a202c;\">Vellaration Technologies matches your profile!</h2>\n      <p>Hi Spriha,</p>\n      <p>Great news! Your profile has been matched with a new opening for a <strong>Sales and Marketing Intern</strong> at <strong>Vellaration Technologies</strong>.</p>\n      \n      <div class=\"card\">\n        <span class=\"badge\">MATCH SCORE: 96%</span>\n        <h4 style=\"margin: 0 0 8px 0; color: #2d3748;\">Sales & Marketing Intern</h4>\n        <p style=\"margin: 0; font-size: 14px; color: #718096;\">Location: Work From Home \u00b7 Stipend: \u20b912,000/month</p>\n        <a href=\"https://internshala.com/application\" class=\"btn\">Apply Now</a>\n      </div>\n      \n      <p style=\"margin-top: 24px; font-size: 13px; color: #718096;\">If you are no longer seeking opportunities, you can <a href=\"https://internshala.com/unsubscribe\">unsubscribe here</a>.</p>\n    </div>\n    <div class=\"footer\">\n      Internshala \u00a9 2026 \u00b7 All Rights Reserved\n    </div>\n  </div>\n</body>\n</html>",
+        "timestamp": "2026-06-10T19:36:00+05:30",
+        "thread_id": "t007"
+    },
+    {
+        "id": "e012",
+        "sender": "newsletter@techdigest.io",
+        "recipients": [
+            "you@company.com"
+        ],
+        "subject": "Weekly Tech Digest: GPT-5 Release, AI Tools, and CSS Tricks",
+        "body": "<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    .wrapper {\n      background-color: #f3f4f6;\n      padding: 24px;\n      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;\n    }\n    .container {\n      max-width: 600px;\n      margin: 0 auto;\n      background-color: #ffffff;\n      border-radius: 12px;\n      overflow: hidden;\n      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);\n    }\n    .banner-img {\n      width: 100%;\n      height: auto;\n      display: block;\n    }\n    .content {\n      padding: 30px;\n      color: #1f2937;\n    }\n    .title {\n      font-size: 24px;\n      font-weight: 700;\n      color: #111827;\n      margin-top: 0;\n      margin-bottom: 16px;\n    }\n    .article-title {\n      font-size: 18px;\n      font-weight: 600;\n      color: #3b82f6;\n      margin-top: 24px;\n      margin-bottom: 8px;\n    }\n    .btn {\n      display: inline-block;\n      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);\n      color: #ffffff !important;\n      text-decoration: none;\n      padding: 12px 28px;\n      border-radius: 8px;\n      font-weight: 600;\n      margin-top: 20px;\n      box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5);\n    }\n    .footer {\n      background-color: #111827;\n      color: #9ca3af;\n      padding: 24px;\n      text-align: center;\n      font-size: 12px;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"wrapper\">\n    <div class=\"container\">\n      <img src=\"http://localhost:5173/newsletter_banner.png\" class=\"banner-img\" alt=\"Newsletter Banner\">\n      <div class=\"content\">\n        <h1 class=\"title\">Weekly Tech Digest</h1>\n        <p>Welcome to this week's edition of the Tech Digest! Here are the stories making headlines this week.</p>\n        \n        <h3 class=\"article-title\">1. GPT-5 Rumours Intensify</h3>\n        <p>Leaked benchmarks suggest the next generation model from OpenAI has significant reasoning upgrades, particularly in code synthesis and mathematical proofs.</p>\n        \n        <h3 class=\"article-title\">2. Master CSS Grid Layouts</h3>\n        <p>Learn how to design highly flexible, responsive layouts in under 10 minutes using native CSS grid syntax. Perfect for dashboard design.</p>\n        \n        <a href=\"https://techdigest.io/issue-45\" class=\"btn\">Read Full Issue</a>\n      </div>\n      <div class=\"footer\">\n        You are receiving this because you subscribed to techdigest.io.<br>\n        <a href=\"https://techdigest.io/unsubscribe\" style=\"color: #60a5fa; text-decoration: underline;\">Unsubscribe</a> \u00b7 Privacy Policy\n      </div>\n    </div>\n  </div>\n</body>\n</html>",
+        "timestamp": "2026-06-11T12:00:00+05:30",
+        "thread_id": null
     }
 ]

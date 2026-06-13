@@ -53,7 +53,7 @@ _MOCK_MESSAGES = [
         },
         "from": {"emailAddress": {"name": "Rahul Sharma", "address": "rahul.sharma@kiit.ac.in"}},
         "toRecipients": [{"emailAddress": {"name": "You", "address": USER_EMAIL}}],
-        "receivedDateTime": (_now - timedelta(hours=1)).isoformat() + "Z",
+        "receivedDateTime": (_now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
         "isRead": False,
         "importance": "high",
         "hasAttachments": True,
@@ -62,7 +62,7 @@ _MOCK_MESSAGES = [
     },
     {
         "id": "graph-msg-002",
-        "subject": "Q3 Review â€“ Action Required",
+        "subject": "Q3 Review – Action Required",
         "bodyPreview": "Please review deck and share inputs by Friday EOW.",
         "body": {
             "contentType": "html",
@@ -70,11 +70,125 @@ _MOCK_MESSAGES = [
         },
         "from": {"emailAddress": {"name": "Priya Menon", "address": "priya.menon@kiit.ac.in"}},
         "toRecipients": [{"emailAddress": {"name": "You", "address": USER_EMAIL}}],
-        "receivedDateTime": (_now - timedelta(hours=3)).isoformat() + "Z",
+        "receivedDateTime": (_now - timedelta(hours=3)).isoformat().replace("+00:00", "Z"),
         "isRead": False,
         "importance": "normal",
         "hasAttachments": True,
         "conversationId": "conv-002",
+        "categories": [],
+    },
+    {
+        "id": "graph-msg-003",
+        "subject": "Project Alpha - Weekly Performance Review",
+        "bodyPreview": "Here is the weekly performance report for Project Alpha.",
+        "body": {
+            "contentType": "html",
+            "content": """<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .container { font-family: Arial, sans-serif; padding: 20px; color: #333333; }
+    .header { background-color: #0078d4; color: white; padding: 15px; border-radius: 4px; }
+    .content { margin-top: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; }
+    tr:nth-child(even) { background-color: #f2f2f2; }
+    .btn { display: inline-block; background-color: #2563eb; color: white !important; padding: 8px 16px; text-decoration: none !important; border-radius: 4px; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>Project Alpha - Weekly Performance Review</h2>
+    </div>
+    <div class="content">
+      <p>Dear Team,</p>
+      <p>Here is the weekly summary for <strong>Project Alpha</strong>. Please review the performance metrics below:</p>
+      <table>
+        <tr>
+          <th>Metric</th>
+          <th>Target</th>
+          <th>Actual</th>
+          <th>Status</th>
+        </tr>
+        <tr>
+          <td>API Response Time</td>
+          <td>&lt; 200ms</td>
+          <td>180ms</td>
+          <td style="color: green; font-weight: bold;">PASS</td>
+        </tr>
+        <tr>
+          <td>Uptime</td>
+          <td>99.9%</td>
+          <td>99.95%</td>
+          <td style="color: green; font-weight: bold;">PASS</td>
+        </tr>
+        <tr>
+          <td>Error Rate</td>
+          <td>&lt; 0.5%</td>
+          <td>1.2%</td>
+          <td style="color: red; font-weight: bold;">WARN</td>
+        </tr>
+      </table>
+      <p>For more detailed logs, you can access the dashboard here: <a href="https://dashboard.company.com/alpha">https://dashboard.company.com/alpha</a></p>
+      <a href="https://dashboard.company.com/alpha/reports" class="btn">View Full Report</a>
+    </div>
+  </div>
+</body>
+</html>""",
+        },
+        "from": {"emailAddress": {"name": "Reports Bot", "address": "reports@company.com"}},
+        "toRecipients": [{"emailAddress": {"name": "You", "address": USER_EMAIL}}],
+        "receivedDateTime": (_now - timedelta(hours=4)).isoformat().replace("+00:00", "Z"),
+        "isRead": False,
+        "importance": "normal",
+        "hasAttachments": False,
+        "conversationId": "conv-003",
+        "categories": [],
+    },
+    {
+        "id": "graph-msg-004",
+        "subject": "Re: Code review request: auth-service PR #312",
+        "bodyPreview": "Swapping JWT libraries sounds like a great move.",
+        "body": {
+            "contentType": "text",
+            "content": """Hey Deepak,
+
+Swapping JWT libraries sounds like a great move. I have reviewed the code, but can we double check the devops configuration?
+
+Best,
+Me
+
+On Thu, Jun 11, 2026 at 2:00 PM Deepak Verma <deepak.verma@company.com> wrote:
+> Hey,
+>
+> I just got confirmation from DevOps to proceed. Here is the message:
+>
+> ---------- Forwarded message ---------
+> From: DevOps Team <devops@company.com>
+> Date: Fri, Jun 12, 2026 at 4:15 PM
+> Subject: Notice: Swapping JWT libraries
+> To: Deepak Verma <deepak.verma@company.com>
+>
+> Hi Deepak,
+>
+> As discussed, please make sure the auth-service migrates to PyJWT.
+>
+> Thanks,
+> DevOps
+>
+> On Thu, Jun 11, 2026 at 1:30 PM You <you@company.com> wrote:
+>> Let me know when you've run the tests.
+>>
+>> Thanks!""",
+        },
+        "from": {"emailAddress": {"name": "You", "address": USER_EMAIL}},
+        "toRecipients": [{"emailAddress": {"name": "Deepak Verma", "address": "deepak.verma@company.com"}}],
+        "receivedDateTime": (_now - timedelta(hours=5)).isoformat().replace("+00:00", "Z"),
+        "isRead": True,
+        "importance": "normal",
+        "hasAttachments": False,
+        "conversationId": "conv-004",
         "categories": [],
     },
 ]
