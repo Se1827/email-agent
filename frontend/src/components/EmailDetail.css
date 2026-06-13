@@ -597,7 +597,7 @@
 }
 .attachment-card-clickable { cursor: pointer; }
 .attachment-card-clickable:hover::after {
-  content: '🔍 Preview';
+  content: 'Preview';
   position: absolute;
   inset: 0;
   display: flex;
