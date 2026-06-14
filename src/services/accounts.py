@@ -32,28 +32,48 @@ def account_inbox(account: AccountConfig) -> str:
 def load_accounts(data_dir: Path) -> list[AccountConfig]:
     """Load account configs from the accounts.json file.
 
-    Initialises accounts.json with dummy data when the file does not exist.
+    Initialises accounts.json based on environment variables when the file
+    does not exist, so it always reflects the configured EMAIL_SOURCE.
     """
+    import os
     accounts_file = data_dir / "accounts.json"
-    
+
     if not accounts_file.exists():
-        dummy_account = AccountConfig(
-            id="testing",
-            name="Se1827",
-            email="se1827@mock.com",
-            provider="mock",
-            imap_host="",
-            imap_port=993,
-            imap_user="se1827@mock.com",
-            imap_pass="",
-            imap_mailbox="INBOX",
-            imap_use_ssl=True,
-            color="#3b82f6",
-            is_active=True
-        )
+        email_source = os.getenv("EMAIL_SOURCE", "mock").lower()
+        if email_source == "imap":
+            default_account = AccountConfig(
+                id="default",
+                name=os.getenv("IMAP_USER", "Default Account").split("@")[0],
+                email=os.getenv("IMAP_USER", ""),
+                provider="imap",
+                imap_host=os.getenv("IMAP_HOST", ""),
+                imap_port=int(os.getenv("IMAP_PORT", "993")),
+                imap_user=os.getenv("IMAP_USER", ""),
+                imap_pass=os.getenv("IMAP_PASS", ""),
+                imap_mailbox=os.getenv("IMAP_MAILBOX", "INBOX"),
+                imap_use_ssl=os.getenv("IMAP_USE_SSL", "true").lower() == "true",
+                color="#3b82f6",
+                is_active=True,
+            )
+        else:
+            # Fallback to mock — but only if seed file actually exists
+            default_account = AccountConfig(
+                id="testing",
+                name="Demo Account",
+                email="demo@mock.com",
+                provider="mock",
+                imap_host="",
+                imap_port=993,
+                imap_user="demo@mock.com",
+                imap_pass="",
+                imap_mailbox="INBOX",
+                imap_use_ssl=True,
+                color="#3b82f6",
+                is_active=True,
+            )
         try:
-            save_accounts(data_dir, [dummy_account])
-            log.info("accounts_file_initialized_with_dummy_data")
+            save_accounts(data_dir, [default_account])
+            log.info("accounts_file_initialized", extra={"provider": default_account.provider})
         except Exception:
             log.exception("accounts_initialization_failed")
 

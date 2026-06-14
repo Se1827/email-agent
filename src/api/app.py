@@ -42,6 +42,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.exception_handler(AuthError)
+    async def auth_error_handler(request: Request, exc: AuthError):
+        """Return a clean 401 when encrypted data cannot be read in request context."""
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):
         path = request.url.path
@@ -60,11 +65,12 @@ def create_app() -> FastAPI:
             token = require_request_auth(request)
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        # Keep the module-level token fresh so background threads (IDLE, sync)
+        # always have an auth context even after the request context is gone.
+        from src.api.routes import _set_background_token
+        _set_background_token(token)
         with use_auth_token(token):
-            try:
-                return await call_next(request)
-            except (AuthError, ValueError) as exc:
-                return JSONResponse(status_code=401, content={"detail": str(exc)})
+            return await call_next(request)
 
     app.include_router(auth_router, prefix="/api")
     app.include_router(router, prefix="/api")

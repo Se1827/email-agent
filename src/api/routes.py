@@ -62,7 +62,26 @@ from src.storage import (
     clear_sync_state,
 )
 import threading
+from src.auth import get_current_token, use_auth_token
+
 _idle_threads: dict[str, threading.Thread] = {}
+
+# Module-level token store: updated every time an authenticated request runs.
+# Background threads (IDLE, background sync) use this to maintain auth context.
+_background_auth_token: str | None = None
+
+
+def _set_background_token(token: str) -> None:
+    """Store the latest valid token for use in background threads."""
+    global _background_auth_token
+    _background_auth_token = token
+
+
+def _get_background_token() -> str | None:
+    """Return current token (request context first, then module-level fallback)."""
+    return get_current_token() or _background_auth_token
+
+
 def _ensure_idle_connection(account: AccountConfig, inbox: str) -> None:
     if account.provider != "imap":
         return
@@ -71,21 +90,31 @@ def _ensure_idle_connection(account: AccountConfig, inbox: str) -> None:
     thread_key = f"{account.id}:{mailbox}"
     if thread_key in _idle_threads and _idle_threads[thread_key].is_alive():
         return
-        
+
+    # Capture token NOW (while we're inside an authenticated request context)
+    captured_token = _get_background_token()
+
     def _on_push_notification():
         log.info("idle_push_received", extra={"account": account.id})
         try:
-            new_emails = _sync_imap_mailbox(account, mailbox, inbox)
-            for email in new_emails:
-                _stamp_account_email(email, account, inbox)
-                _merge_source_email(email, source=email.account_id or cfg.email_source)
+            token = _get_background_token() or captured_token
+            if not token:
+                log.error("idle_no_auth_token", extra={"account": account.id})
+                return
+            with use_auth_token(token):
+                new_emails = _sync_imap_mailbox(account, mailbox, inbox)
+                for email in new_emails:
+                    _stamp_account_email(email, account, inbox)
+                    email.inbox = email.inbox or inbox  # ensure inbox is set before merge
+                    _merge_source_email(email, source=email.account_id or cfg.email_source)
         except Exception as exc:
             log.error("idle_sync_failed", extra={"error": str(exc)})
+
     host = account.imap_host or cfg.imap_host
     port = account.imap_port or cfg.imap_port
     username = account.imap_user or account.email or cfg.imap_user
     password = account.imap_pass or cfg.imap_pass
-    
+
     t = threading.Thread(
         target=idle_loop,
         args=(host, port, username, password),
@@ -349,7 +378,11 @@ def _load_email_source() -> list[Email]:
 def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email]:
     cfg = get_settings()
     if account.provider == "mock":
-        return load_mock_emails(cfg.data_dir / "seed_emails.json")
+        seed_file = cfg.data_dir / "seed_emails.json"
+        if not seed_file.exists():
+            log.warning("seed_emails_not_found", extra={"path": str(seed_file)})
+            return []
+        return load_mock_emails(seed_file)
     if account.provider == "graph":
         from src.connectors.graph import graph
         raw_msgs = graph.list_messages(top=cfg.imap_fetch_limit)
@@ -401,13 +434,21 @@ def _ensure_loaded() -> None:
                     if account.is_active:
                         _load_emails_from_storage(account_inbox(account), account=account)
             if load_mode != "db_only":
+                # Capture token now (inside authenticated request context)
+                sync_token = _get_background_token()
+
                 def _background_sync():
                     try:
-                        for email in _load_email_source():
-                            _merge_source_email(email, source=email.account_id or cfg.email_source)
+                        token = _get_background_token() or sync_token
+                        if not token:
+                            log.error("background_sync_no_auth_token")
+                            return
+                        with use_auth_token(token):
+                            for email in _load_email_source():
+                                _merge_source_email(email, source=email.account_id or cfg.email_source)
                     except Exception as e:
                         log.error("background_sync_failed", extra={"error": str(e)})
-                
+
                 threading.Thread(target=_background_sync, daemon=True).start()
         except Exception as exc:
             log.error("email_load_failed", extra={"error": str(exc)})
