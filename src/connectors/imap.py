@@ -343,7 +343,11 @@ def idle_loop(
             conn = klass(host, port)
             conn.login(username, password.replace(" ", ""))
             conn.select(mailbox, readonly=True)
-            conn.sock.settimeout(29 * 60)
+            try:
+                conn.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except Exception:
+                pass
+            conn.sock.settimeout(2 * 60)
             
             while True:
                 # Send IDLE command

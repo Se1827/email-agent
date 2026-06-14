@@ -466,14 +466,17 @@ def store_semantic_memory(
 def store_calendar_event(event: Any, *, source: str = "calendar") -> StoredRecord | None:
     payload = event.model_dump(mode="json") if hasattr(event, "model_dump") else dict(event)
     record_id = payload.get("id") or _stable_hash(json.dumps(payload, sort_keys=True))
+    source_email = payload.get("source_email_id")
     metadata = {
         "title_hash": _stable_hash(payload.get("title", "")),
         "attendee_count": len(payload.get("attendees", []) or []),
+        "source_email_id": source_email,
     }
     return upsert_record(
         "calendar_event",
         record_id=record_id,
         payload=payload,
+        email_id=source_email,
         source=source,
         occurred_at=payload.get("start"),
         metadata=metadata,

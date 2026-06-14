@@ -103,6 +103,7 @@ async def run_classification_agent(ctx: SharedAgentContext) -> None:
             f"conflict with {conflict_titles}"
         )
         factors.append(f"conflict with {conflict_titles}")
+        parsed.conflicting_event_id = cal_findings.conflicts[0].event.id
     elif cal_findings.resolved_date:
         parsed.reasoning = (
             f"{parsed.reasoning} — "

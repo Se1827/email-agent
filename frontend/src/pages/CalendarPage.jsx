@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   CalendarDays, Plus, ChevronLeft, ChevronRight,
-  Clock, MapPin, Users, Trash2, X, Sparkles, Link2, FileText
+  Clock, MapPin, Users, Trash2, X, Sparkles, Link2, FileText, Mail
 } from 'lucide-react';
 import { fetchCalendarEvents, createCalendarEvent, deleteCalendarEvent, syncCalendarEvents, fetchMeetingBrief } from '../api';
 import './CalendarPage.css';
@@ -226,6 +226,16 @@ function CalendarPage() {
                   )}
                 </div>
                 <div className="cal-event-actions">
+                  {ev.source_email_id && (
+                    <a
+                      className="btn btn-secondary cal-event-source"
+                      href={`/inbox?email=${encodeURIComponent(ev.source_email_id)}`}
+                      title="View the email that created this event"
+                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Mail size={13} /> View Email
+                    </a>
+                  )}
                   <button className="btn btn-secondary cal-event-prepare" onClick={() => handlePrepare(ev)} title="Prepare Brief">
                     <FileText size={13} /> Prepare
                   </button>

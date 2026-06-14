@@ -1,15 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Mail, MailWarning, CheckCircle2, Star,
   AlertTriangle, Bell, Clock, CalendarDays,
   ArrowRight, Sparkles, Link2, ShieldCheck,
   TrendingUp, Zap, X, ListChecks, CheckCircle, XCircle,
-  Brain, Sunrise, MessageSquare, Target
+  Brain, Sunrise, MessageSquare, Target, Lightbulb,
+  AlertCircle, FileEdit, Crown, RefreshCw,
+  CalendarPlus, Plus, Loader,
 } from 'lucide-react';
 import {
   fetchDashboard, dismissNotification, fetchDailyDigest,
-  fetchActionItems, updateActionItem, request
+  fetchActionItems, updateActionItem, request,
+  triggerDigestGeneration, digestCardAction,
 } from '../api';
 import './Dashboard.css';
 
@@ -26,13 +29,205 @@ const SEVERITY_ICONS = {
   info: Sparkles,
 };
 
+const NUDGE_ICONS = {
+  overdue: AlertCircle,
+  stale_draft: FileEdit,
+  vip: Crown,
+  reminder: Bell,
+};
+
+function UrgencyRing({ score }) {
+  const circumference = 2 * Math.PI * 20;
+  const filled = (score / 10) * circumference;
+  const level = score <= 2 ? 'low' : score <= 5 ? 'moderate' : score <= 7 ? 'high' : 'critical';
+  const levelLabel = score <= 2 ? 'All Clear' : score <= 5 ? 'Moderate' : score <= 7 ? 'Busy' : 'Critical';
+  const color = score <= 2 ? '#22c55e' : score <= 5 ? '#f59e0b' : score <= 7 ? '#f97316' : '#ef4444';
+
+  return (
+    <div className="digest-urgency-bar">
+      <div className="urgency-ring">
+        <svg width="48" height="48" viewBox="0 0 48 48">
+          <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
+          <circle cx="24" cy="24" r="20" fill="none" stroke={color} strokeWidth="4"
+            strokeDasharray={`${filled} ${circumference}`}
+            strokeLinecap="round" transform="rotate(-90 24 24)"
+            style={{ transition: 'stroke-dasharray 1s ease', filter: `drop-shadow(0 0 4px ${color}40)` }}
+          />
+        </svg>
+        <span className="urgency-ring-label">{score}</span>
+      </div>
+      <div className="urgency-info">
+        <div className={`urgency-level urgency-${level}`}>{levelLabel}</div>
+        <div className="urgency-desc">Inbox urgency score</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Deadline term highlight helper ────────────────────────────────────────
+function DeadlineHighlight({ text, terms }) {
+  if (!text || !terms || terms.length === 0) return <span>{text}</span>;
+  // Build regex from terms
+  const escaped = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = text.split(pattern);
+  return (
+    <span>
+      {parts.map((part, i) =>
+        terms.some(t => t.toLowerCase() === part.toLowerCase())
+          ? <mark key={i} className="deadline-pill">{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </span>
+  );
+}
+
+// ── Email Digest Card ─────────────────────────────────────────────────────
+const URGENCY_COLORS = {
+  critical: '#ef4444',
+  high: '#f97316',
+  normal: '#6366f1',
+  low: '#6b7280',
+};
+
+function EmailDigestCard({ card, onNavigate }) {
+  const [actionLoading, setActionLoading] = useState(null);
+  const [actionDone, setActionDone] = useState({});
+
+  const rawUrgency = card.urgency || card.priority || 'normal';
+  const urgency = rawUrgency === 'unclassified' ? 'normal' : rawUrgency;
+  const borderColor = URGENCY_COLORS[urgency] || URGENCY_COLORS.normal;
+  const senderInitial = (card.sender || '?').charAt(0).toUpperCase();
+  const senderName = card.sender?.split('@')[0] || card.sender;
+
+  const handleCardAction = async (actionType, actionData) => {
+    setActionLoading(actionType);
+    try {
+      await digestCardAction(card.id, actionType, actionData);
+      setActionDone(prev => ({ ...prev, [actionType]: true }));
+    } catch (err) {
+      console.error('Card action failed:', err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  return (
+    <div className="digest-email-card" style={{ '--card-urgency': borderColor }}>
+      {/* Header: Avatar + Subject + Time */}
+      <div className="digest-card-header" onClick={onNavigate}>
+        <div className="digest-card-avatar" style={{ background: borderColor }}>
+          {senderInitial}
+          {card.thread_count > 1 && (
+            <span className="digest-thread-badge">{card.thread_count}</span>
+          )}
+        </div>
+        <div className="digest-card-meta">
+          <div className="digest-card-subject">{card.subject || 'No subject'}</div>
+          <div className="digest-card-sender-row">
+            <span className="digest-card-sender">{senderName}</span>
+            {card.time_since && <span className="digest-card-time">{card.time_since}</span>}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:4,flexShrink:0,flexDirection:'column',alignItems:'flex-end'}}>
+          <span className={`digest-urgency-chip urgency-${urgency}`}>{urgency}</span>
+          {card.category && card.category !== 'unknown' && (
+            <span className={`digest-category-chip cat-${card.category}`}>{card.category}</span>
+          )}
+        </div>
+      </div>
+
+      {/* AI Classification Summary */}
+      {card.reasoning && (
+        <div className="digest-card-reasoning" onClick={onNavigate}>
+          <Brain size={11} /> {card.reasoning}
+        </div>
+      )}
+
+      {/* Preview with deadline highlighting */}
+      {card.preview && (
+        <div className="digest-card-preview" onClick={onNavigate}>
+          <DeadlineHighlight text={card.preview} terms={card.deadline_terms || []} />
+        </div>
+      )}
+
+      {/* Deadline terms pills (standalone if no preview) */}
+      {!card.preview && card.deadline_terms?.length > 0 && (
+        <div className="digest-card-deadlines">
+          {card.deadline_terms.map((term, i) => (
+            <span key={i} className="deadline-pill">{term}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Why / reasoning (fallback for old format) */}
+      {card.why && !card.preview && !card.reasoning && (
+        <div className="digest-card-why">{card.why}</div>
+      )}
+
+      {/* Suggested Actions */}
+      {(card.suggested_actions?.length > 0 || card.deadline_terms?.length > 0) && (
+        <div className="digest-card-actions">
+          {card.suggested_actions?.map((sa, i) => (
+            <button
+              key={i}
+              className={`digest-action-btn ${actionDone[sa.type + i] ? 'done' : ''}`}
+              disabled={!!actionLoading || actionDone[sa.type + i]}
+              onClick={(e) => {
+                e.stopPropagation();
+                const isAlreadyDone = sa.already_done;
+                const data = sa.type === 'calendar'
+                  ? { title: sa.label, date: sa.date || new Date().toISOString() }
+                  : { description: sa.label };
+                if (!isAlreadyDone) handleCardAction(sa.type, data);
+              }}
+            >
+              {sa.type === 'calendar' ? <CalendarPlus size={12} /> : <Plus size={12} />}
+              {sa.already_done ? sa.label : actionLoading === sa.type ? 'Adding...' : actionDone[sa.type + i] ? 'Added ✓' : sa.label}
+            </button>
+          ))}
+          {/* Default buttons if no suggested_actions but has deadlines */}
+          {(!card.suggested_actions || card.suggested_actions.length === 0) && card.id && (
+            <>
+              <button
+                className={`digest-action-btn ${card.has_existing_event || actionDone.calendar ? 'done' : ''}`}
+                disabled={!!actionLoading || actionDone.calendar || card.has_existing_event}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCardAction('calendar', { title: card.subject, date: new Date().toISOString() });
+                }}
+              >
+                <CalendarPlus size={12} />
+                {card.has_existing_event ? 'Already in calendar ✓' : actionLoading === 'calendar' ? 'Adding...' : actionDone.calendar ? 'Added ✓' : 'Add to Calendar'}
+              </button>
+              <button
+                className={`digest-action-btn ${card.has_existing_action || actionDone.action ? 'done' : ''}`}
+                disabled={!!actionLoading || actionDone.action || card.has_existing_action}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCardAction('action', { description: `Follow up on: ${card.subject}` });
+                }}
+              >
+                <Plus size={12} />
+                {card.has_existing_action ? 'Action exists ✓' : actionLoading === 'action' ? 'Adding...' : actionDone.action ? 'Added ✓' : 'Create Action'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function Dashboard() {
   const [data, setData] = useState(null);
   const [graphStatus, setGraphStatus] = useState(null);
-  const [graphLoading, setGraphLoading] = useState(false);
   const [digest, setDigest] = useState(null);
   const [digestLoading, setDigestLoading] = useState(false);
+  const [digestDays, setDigestDays] = useState(0);
   const [actionItems, setActionItems] = useState([]);
+  const [allActionItems, setAllActionItems] = useState([]);
   const [actionsLoading, setActionsLoading] = useState(false);
 
   useEffect(() => {
@@ -46,14 +241,22 @@ function Dashboard() {
   useEffect(() => {
     loadDashboard();
     loadActionItems();
-    
+
+    // Auto-load digest (check cache first)
+    const cached = sessionStorage.getItem('daily_digest');
+    if (cached) {
+      try { setDigest(JSON.parse(cached)); } catch (_) { loadDigest(); }
+    } else {
+      loadDigest();
+    }
+
     // Background polling every 30s (light dashboard stats only, not LLM calls)
     const interval = setInterval(() => {
       fetchDashboard()
         .then(d => setData(d))
         .catch(err => console.error('Auto-fetch failed:', err));
     }, 30000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -68,11 +271,13 @@ function Dashboard() {
     }
   };
 
-  const loadDigest = async () => {
+  const loadDigest = async (days) => {
+    const d_days = days !== undefined ? days : digestDays;
     setDigestLoading(true);
     try {
-      const d = await fetchDailyDigest();
+      const d = await fetchDailyDigest(d_days);
       setDigest(d);
+      sessionStorage.setItem('daily_digest', JSON.stringify(d));
     } catch (err) {
       console.error('Digest load failed:', err);
     } finally {
@@ -83,8 +288,11 @@ function Dashboard() {
   const loadActionItems = async () => {
     setActionsLoading(true);
     try {
-      const items = await fetchActionItems('pending');
-      setActionItems(items);
+      const pending = await fetchActionItems('pending');
+      setActionItems(pending);
+      // Also load completed for progress bar
+      const all = await fetchActionItems();
+      setAllActionItems(all);
     } catch (err) {
       console.error('Actions load failed:', err);
     } finally {
@@ -96,6 +304,7 @@ function Dashboard() {
     try {
       await updateActionItem(id, status);
       setActionItems(prev => prev.map(a => a.id === id ? {...a, status} : a));
+      setAllActionItems(prev => prev.map(a => a.id === id ? {...a, status} : a));
     } catch (err) { console.error('Action update failed:', err); }
   };
 
@@ -137,6 +346,12 @@ function Dashboard() {
   }
 
   const totalPriority = Object.values(data.priority_breakdown).reduce((a, b) => a + b, 0) || 1;
+
+  // Action items progress
+  const pendingActions = actionItems.filter(a => a.status === 'pending');
+  const completedCount = allActionItems.filter(a => a.status === 'completed').length;
+  const totalActions = allActionItems.length;
+  const progressPct = totalActions > 0 ? Math.round((completedCount / totalActions) * 100) : 0;
 
   return (
     <div className="dashboard" id="dashboard-page">
@@ -180,75 +395,181 @@ function Dashboard() {
           {/* ---- AI Daily Digest ---- */}
           <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.05s'}}>
             <div className="section-heading-row">
-              <h2 className="section-heading"><Sunrise size={13} /> Daily Brief</h2>
-              <button className="btn-link" onClick={loadDigest} disabled={digestLoading}>
-                {digestLoading ? 'Refreshing...' : 'Refresh'}
-              </button>
+              <h2 className="section-heading"><Sunrise size={13} /> Daily Digest</h2>
+              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                {/* Date range selector */}
+                <div className="digest-day-selector">
+                  {[{v:0,l:'Today'},{v:1,l:'2 Days'},{v:2,l:'3 Days'}].map(opt => (
+                    <button key={opt.v}
+                      className={`digest-day-btn ${digestDays === opt.v ? 'active' : ''}`}
+                      disabled={digestLoading}
+                      onClick={() => { setDigestDays(opt.v); loadDigest(opt.v); }}
+                    >{opt.l}</button>
+                  ))}
+                </div>
+                {digest?.generated_at && (
+                  <span className="digest-status-badge">
+                    <Clock size={10} /> {new Date(digest.generated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+                    {digest.auto_classified && <span className="digest-auto-badge">AI-Rich</span>}
+                  </span>
+                )}
+                <button className="btn-link" onClick={() => loadDigest()} disabled={digestLoading}>
+                  <RefreshCw size={12} className={digestLoading ? 'spin' : ''} style={{marginRight: 4}} />
+                  {digestLoading ? 'Generating...' : 'Refresh'}
+                </button>
+              </div>
             </div>
-            {digest ? (
+            {digestLoading && !digest ? (
               <div className="digest-card glass-card">
+                <div className="digest-loading-state">
+                  <div className="digest-loading-line" style={{width: '70%'}} />
+                  <div className="digest-loading-line" style={{width: '100%'}} />
+                  <div className="digest-loading-line" style={{width: '85%'}} />
+                  <div className="digest-loading-line" style={{width: '60%'}} />
+                  <div className="digest-loading-line" style={{width: '90%'}} />
+                </div>
+              </div>
+            ) : digest ? (
+              <div className="digest-card glass-card">
+                {/* Greeting */}
                 <div className="digest-greeting">
                   <Brain size={16} className="digest-brain-icon" />
                   <span>{digest.greeting}</span>
+                  {digest.emails_in_digest !== undefined && (
+                    <span className="digest-count-badge" style={{marginLeft:'auto'}}>
+                      {digest.emails_in_digest} actionable / {digest.total_emails} total
+                    </span>
+                  )}
                 </div>
-                {digest.one_line && (
-                  <div className="digest-oneliner">{digest.one_line}</div>
-                )}
-                {digest.priority_emails?.length > 0 && (
-                  <div className="digest-section">
-                    <h4 className="digest-section-title"><Target size={12} /> Priority Emails</h4>
-                    {digest.priority_emails.map((pe, i) => (
-                      <div key={i} className="digest-email-row" onClick={() => navigate('/inbox')}>
-                        <span className={`digest-priority-dot priority-${pe.priority}`} />
-                        <div className="digest-email-info">
-                          <span className="digest-email-subject">{pe.subject}</span>
-                          <span className="digest-email-why">{pe.why}</span>
+
+                {/* All Clear Celebration */}
+                {digest.all_clear ? (
+                  <div className="digest-all-clear">
+                    <div className="digest-all-clear-icon">☀️</div>
+                    <div className="digest-all-clear-title">You're all caught up!</div>
+                    <div className="digest-all-clear-sub">{digest.one_line}</div>
+
+                    {/* Still show calendar even when all clear */}
+                    {digest.calendar_today?.length > 0 && (
+                      <div className="digest-section" style={{marginTop: 16, width: '100%'}}>
+                        <h4 className="digest-section-title"><CalendarDays size={12} /> Today's Schedule</h4>
+                        <div className="digest-schedule">
+                          {digest.calendar_today.map((c, i) => (
+                            <div key={i} className="digest-schedule-item"
+                              onClick={() => navigate('/calendar')}
+                              style={{cursor: 'pointer'}}>
+                              <span className="schedule-time">{c.time || '—'}</span>
+                              <span className="schedule-dot" />
+                              <span className="schedule-title">{c.title || c}</span>
+                            </div>
+                          ))}
                         </div>
-                        <span className="digest-email-sender">{pe.sender?.split('@')[0]}</span>
                       </div>
-                    ))}
+                    )}
+
+                    {digest.tip && (
+                      <div className="digest-tip" style={{marginTop: 12}}>
+                        <Lightbulb size={14} />
+                        <span>{digest.tip}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-                {digest.themes?.length > 0 && (
-                  <div className="digest-section">
-                    <h4 className="digest-section-title"><MessageSquare size={12} /> Themes</h4>
-                    <div className="digest-themes">
-                      {digest.themes.map((t, i) => (
-                        <div key={i} className="digest-theme-chip">
-                          <span className="digest-theme-name">{t.theme}</span>
-                          <span className="digest-theme-count">{t.count}</span>
+                ) : (
+                  <>
+                    {/* Urgency Score */}
+                    {digest.urgency_score !== undefined && (
+                      <UrgencyRing score={digest.urgency_score} />
+                    )}
+
+                    {/* One-liner */}
+                    {digest.one_line && (
+                      <div className="digest-oneliner">{digest.one_line}</div>
+                    )}
+
+                    {/* Email Digest Cards */}
+                    {(digest.email_cards?.length > 0 || digest.priority_emails?.length > 0) && (
+                      <div className="digest-section">
+                        <h4 className="digest-section-title"><Target size={12} /> Your Email Digest
+                          <span className="digest-count-badge">
+                            {(digest.email_cards || digest.priority_emails || []).length} emails
+                          </span>
+                        </h4>
+                        <div className="digest-email-cards">
+                          {(digest.email_cards || digest.priority_emails || []).map((card, i) => (
+                            <EmailDigestCard
+                              key={card.id || i}
+                              card={card}
+                              onNavigate={() => navigate(card.id ? `/inbox?email=${encodeURIComponent(card.id)}` : '/inbox')}
+                            />
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {digest.nudges?.length > 0 && (
-                  <div className="digest-section">
-                    <h4 className="digest-section-title"><AlertTriangle size={12} /> Nudges</h4>
-                    {digest.nudges.map((n, i) => (
-                      <div key={i} className="digest-nudge">
-                        <Zap size={11} />
-                        <span>{n}</span>
                       </div>
-                    ))}
-                  </div>
-                )}
-                {digest.calendar_today?.length > 0 && (
-                  <div className="digest-section">
-                    <h4 className="digest-section-title"><CalendarDays size={12} /> Today's Schedule</h4>
-                    {digest.calendar_today.map((c, i) => (
-                      <div key={i} className="digest-cal-item">
-                        <Clock size={11} />
-                        <span>{c}</span>
+                    )}
+
+                    {/* Themes */}
+                    {digest.themes?.length > 0 && (
+                      <div className="digest-section">
+                        <h4 className="digest-section-title"><MessageSquare size={12} /> Themes</h4>
+                        <div className="digest-themes">
+                          {digest.themes.map((t, i) => (
+                            <div key={i} className="digest-theme-chip" title={t.summary}>
+                              <span className="digest-theme-name">{t.theme}</span>
+                              <span className="digest-theme-count">{t.count}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    )}
+
+                    {/* Nudges */}
+                    {digest.nudges?.length > 0 && (
+                      <div className="digest-section">
+                        <h4 className="digest-section-title"><AlertTriangle size={12} /> Nudges</h4>
+                        {digest.nudges.map((n, i) => {
+                          const nudgeType = n.type || 'reminder';
+                          const NudgeIcon = NUDGE_ICONS[nudgeType] || Zap;
+                          return (
+                            <div key={i} className={`digest-nudge nudge-${nudgeType}`}>
+                              <NudgeIcon size={13} className="nudge-icon" />
+                              <span>{n.text || n}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Today's Schedule (Timeline) */}
+                    {digest.calendar_today?.length > 0 && (
+                      <div className="digest-section">
+                        <h4 className="digest-section-title"><CalendarDays size={12} /> Today's Schedule</h4>
+                        <div className="digest-schedule">
+                          {digest.calendar_today.map((c, i) => (
+                            <div key={i} className="digest-schedule-item"
+                              onClick={() => navigate('/calendar')}
+                              style={{cursor: 'pointer'}}>
+                              <span className="schedule-time">{c.time || '—'}</span>
+                              <span className="schedule-dot" />
+                              <span className="schedule-title">{c.title || c}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tip */}
+                    {digest.tip && (
+                      <div className="digest-tip">
+                        <Lightbulb size={14} />
+                        <span>{digest.tip}</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : (
               <div className="digest-card glass-card digest-empty">
                 <Brain size={24} />
-                <p>{digestLoading ? 'Generating your daily brief...' : 'Click Refresh to generate your AI daily brief'}</p>
+                <p>Loading your daily brief...</p>
               </div>
             )}
           </section>
@@ -374,26 +695,51 @@ function Dashboard() {
           <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.15s'}}>
             <div className="section-heading-row">
               <h2 className="section-heading"><ListChecks size={13} /> Action Items</h2>
-              <span className="section-badge">{actionItems.filter(a => a.status === 'pending').length} pending</span>
+              <span className="section-badge">{pendingActions.length} pending</span>
             </div>
             <div className="action-feed glass-card">
+              {/* Progress Bar */}
+              {totalActions > 0 && (
+                <div className="action-progress-bar" style={{padding: '12px 16px 4px'}}>
+                  <div className="action-progress-track">
+                    <div className="action-progress-fill" style={{width: `${progressPct}%`}} />
+                  </div>
+                  <span className="action-progress-label">{completedCount}/{totalActions} done</span>
+                </div>
+              )}
+
               {actionsLoading ? (
                 <div className="action-feed-loading">Loading action items...</div>
-              ) : actionItems.filter(a => a.status === 'pending').length === 0 ? (
-                <div className="action-feed-empty">
-                  <CheckCircle2 size={20} />
-                  <p>No pending action items — you're all caught up!</p>
+              ) : pendingActions.length === 0 ? (
+                <div className="action-feed-empty-celebration">
+                  <div className="celebration-icon">🎉</div>
+                  <div className="celebration-text">All caught up!</div>
+                  <div className="celebration-sub">No pending action items</div>
                 </div>
               ) : (
-                actionItems.filter(a => a.status === 'pending').slice(0, 8).map(item => (
-                  <div key={item.id} className="action-feed-item">
+                pendingActions.slice(0, 8).map(item => (
+                  <div key={item.id} className={`action-feed-item action-priority-${item.priority || 'normal'}`}>
                     <div className="action-feed-item-content">
                       <span className="action-feed-desc">{item.description}</span>
-                      {item.due_date && (
-                        <span className="action-feed-due">
-                          <Clock size={10} /> {new Date(item.due_date).toLocaleDateString()}
-                        </span>
-                      )}
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
+                        {item.is_overdue && (
+                          <span className="action-overdue-badge">
+                            <AlertCircle size={10} /> Overdue
+                            {item.hours_overdue > 0 && ` · ${item.hours_overdue}h`}
+                          </span>
+                        )}
+                        {item.due_date && !item.is_overdue && (
+                          <span className="action-feed-due">
+                            <Clock size={10} /> {new Date(item.due_date).toLocaleDateString()}
+                          </span>
+                        )}
+                        {item.source_subject && (
+                          <a className="action-feed-source"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/inbox?email=${encodeURIComponent(item.email_id)}`); }}>
+                            <Mail size={10} /> {item.source_subject.slice(0, 30)}
+                          </a>
+                        )}
+                      </div>
                     </div>
                     <div className="action-feed-btns">
                       <button className="action-feed-btn done" title="Complete"
@@ -471,5 +817,3 @@ function Dashboard() {
 }
 
 export default Dashboard;
-
-

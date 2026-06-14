@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, PenSquare, Menu } from 'lucide-react';
 import InboxNavbar from '../components/InboxNavbar';
 import EmailList from '../components/EmailList';
@@ -60,6 +61,7 @@ function InboxPage() {
   const [selectedAccountId, setSelectedAccountId] = useState(() => localStorage.getItem('selectedAccountId') || 'all');
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [autoDraftEmailId, setAutoDraftEmailId] = useState(null);
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
 
@@ -105,6 +107,21 @@ function InboxPage() {
     
     return () => clearInterval(interval);
   }, [loadEmails]);
+
+  // Auto-select email from URL query param (e.g. /inbox?email=xxx)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const emailParam = searchParams.get('email');
+    if (emailParam && emails.length > 0 && !selected) {
+      const target = emails.find(e => e.id === emailParam);
+      if (target) {
+        setSelected(target);
+        // Clear the param so it doesn't re-trigger
+        searchParams.delete('email');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [emails, searchParams, selected, setSearchParams]);
 
   useEffect(() => {
     fetchAccounts().then((data) => {
@@ -280,6 +297,20 @@ function InboxPage() {
               email={selected}
               onUpdate={updateEmail}
               onReload={loadEmails}
+              autoDraft={selected && selected.id === autoDraftEmailId}
+              clearAutoDraft={() => setAutoDraftEmailId(null)}
+              onSelect={(emailOrId, options) => {
+                const id = typeof emailOrId === 'string' ? emailOrId : emailOrId?.id;
+                if (options?.autoDraft) {
+                  setAutoDraftEmailId(id);
+                }
+                if (typeof emailOrId === 'string') {
+                  const found = emails.find(e => e.id === emailOrId);
+                  if (found) setSelected(found);
+                } else {
+                  setSelected(emailOrId);
+                }
+              }}
             />
           </>
         )}

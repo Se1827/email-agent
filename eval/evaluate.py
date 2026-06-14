@@ -66,7 +66,7 @@ async def run_evaluation(
             )
 
             privacy = _inspect_privacy(item)
-            cls = await classifier.classify(email)
+            cls, _ = await classifier.classify(email)
             email.classification = cls
             draft = await drafter.draft_reply(email, cls)
 
@@ -86,15 +86,20 @@ async def run_evaluation(
 
 
 def _install_mock_llm(item: dict, interactions: list[dict]) -> None:
-    responses = [
-        json.dumps(item["mock_classification"]),
-        item["mock_draft"],
-    ]
-
     async def mock_chat(messages, **kwargs):
-        response = responses.pop(0)
-        interactions.append(_interaction("classification" if not interactions else "draft", messages, response, kwargs))
-        return response
+        system_content = next((msg["content"] for msg in messages if msg["role"] == "system"), "")
+        if "extract proposed meeting" in system_content or "extract proposed" in system_content:
+            response = json.dumps({"has_proposed_date": False, "date": None, "time": None, "is_all_day": False, "summary": None})
+            interactions.append(_interaction("date_resolution", messages, response, kwargs))
+            return response
+        elif "triage" in system_content or "classify" in system_content:
+            response = json.dumps(item["mock_classification"])
+            interactions.append(_interaction("classification", messages, response, kwargs))
+            return response
+        else:
+            response = item["mock_draft"]
+            interactions.append(_interaction("draft", messages, response, kwargs))
+            return response
 
     classifier.llm.chat = mock_chat
     drafter.llm.chat = mock_chat
@@ -102,7 +107,13 @@ def _install_mock_llm(item: dict, interactions: list[dict]) -> None:
 
 def _install_live_spy(original_chat, interactions: list[dict]) -> None:
     async def spy_chat(messages, **kwargs):
-        stage = "classification" if not interactions else "draft"
+        system_content = next((msg["content"] for msg in messages if msg["role"] == "system"), "")
+        if "extract proposed meeting" in system_content or "extract proposed" in system_content:
+            stage = "date_resolution"
+        elif "triage" in system_content or "classify" in system_content:
+            stage = "classification"
+        else:
+            stage = "draft"
         response = await original_chat(messages, **kwargs)
         interactions.append(_interaction(stage, messages, response, kwargs))
         return response
@@ -150,7 +161,9 @@ def _score_case(item: dict, cls, draft_body: str, interactions: list[dict], priv
     category_ok = cls.category.value == item["expected_category"]
     pii_absent = all(secret not in all_prompt_text for secret in item.get("pii_must_not_reach_llm", []))
     tokens_present = all(token in all_prompt_text for token in item.get("expected_mask_tokens", []))
-    prompt_captured = len(interactions) == 2
+    is_rule_engine = "Rule engine" in getattr(cls, "reasoning", "")
+    expected_count = 1 if is_rule_engine else 2
+    prompt_captured = len([i for i in interactions if i["stage"] in ("classification", "draft")]) == expected_count
     draft_intents = _evaluate_draft_expectations(item, draft_body)
     draft_review_ok = all(intent["matched"] for intent in draft_intents) if draft_intents else True
 

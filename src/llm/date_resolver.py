@@ -81,9 +81,17 @@ async def resolve_proposed_datetime(
 
     Returns None if the email doesn't propose any meeting/event date.
     """
-    # Use local time as reference — email timestamps may be in UTC, which
-    # would shift relative dates like "tomorrow" by a day in other timezones.
-    ref = datetime.now().replace(second=0, microsecond=0)
+    try:
+        from src.services.pii import PrivacyGateway
+        privacy = PrivacyGateway()
+        subject = privacy.mask_text(subject).text
+        body = privacy.mask_text(body).text
+    except Exception as exc:
+        log.warning("Failed to mask PII in date resolver", exc_info=exc)
+
+    # Use email timestamp as reference (converted to local/naive to keep relative comparisons simple)
+    ref = email_timestamp.astimezone() if email_timestamp.tzinfo else email_timestamp
+    ref = ref.replace(second=0, microsecond=0, tzinfo=None)
 
     user_msg = _USER.format(
         ref_date=ref.strftime("%Y-%m-%d"),

@@ -48,8 +48,8 @@ export function draftReply(id, quality = 'balanced', force = true) {
     body: JSON.stringify({ quality }),
   });
 }
-export function approveDraft(id) {
-  return request(`/emails/${id}/approve`, { method: 'POST' });
+export function approveDraft(id, sendReschedule = false) {
+  return request(`/emails/${id}/approve?send_reschedule=${sendReschedule}`, { method: 'POST' });
 }
 export function sendReply(emailId, body, to, cc, bcc, action = 'reply') {
   return request(`/emails/${emailId}/send-reply`, {
@@ -269,9 +269,27 @@ export function updateSenderProfile(emailAddress, updates) {
 }
 
 // ---- Digest & Briefing ----
-export function fetchDailyDigest() {
-  return request('/digest');
+export function fetchDailyDigest(days = 0) {
+  return request(`/digest?days=${days}`);
 }
 export function fetchMeetingBrief(eventId) {
   return request(`/calendar/events/${eventId}/brief`);
+}
+export function fetchDigestConfig() {
+  return request('/digest/config');
+}
+export function saveDigestConfig(config) {
+  return request('/digest/config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}
+export function triggerDigestGeneration() {
+  return request('/digest/generate', { method: 'POST' });
+}
+export function digestCardAction(emailId, actionType, data = {}) {
+  return request('/digest/card-action', {
+    method: 'POST',
+    body: JSON.stringify({ email_id: emailId, action_type: actionType, ...data }),
+  });
 }

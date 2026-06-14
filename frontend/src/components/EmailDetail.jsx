@@ -2,12 +2,14 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Shield, Sparkles, RotateCcw, Send, Zap, Clock, Gauge,
   ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check,
-  Paperclip, Download, ListChecks, CheckCircle, XCircle, Info
+  Paperclip, Download, ListChecks, CheckCircle, XCircle, Info,
+  Calendar, CalendarPlus, CalendarX
 } from 'lucide-react';
 import {
   classifyEmail, draftReply, approveDraft, fetchEmail,
   markAsRead, fetchThread, sendReply, getAttachmentUrl,
-  extractActionItems, updateActionItem, request
+  extractActionItems, updateActionItem, request,
+  deleteCalendarEvent, composeEmail
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
 import './EmailDetail.css';
@@ -298,6 +300,79 @@ function AttachmentsBar({ attachments, emailId }) {
         </>
     );
 }
+function PipelineTrace({ email, classification: cls, draft }) {
+    const [open, setOpen] = useState(false);
+    if (!cls) return null;
+
+    const piiTypes = draft?.redacted_types || [];
+    const hasPii = draft?.pii_redacted || piiTypes.length > 0;
+    const isRuleEngineResult = cls.reasoning?.startsWith('Rule engine:');
+
+    const steps = [
+        {
+            name: 'Email Ingestion',
+            status: 'done',
+            detail: `Source: ${email.account_id || 'mock'} · ${email.storage_origin || 'source'}`,
+            color: '#6366f1',
+        },
+        {
+            name: 'Rule Engine',
+            status: 'done',
+            detail: isRuleEngineResult ? `Matched — ${cls.reasoning.replace('Rule engine: ', '')}` : 'No rule match → forwarded to LLM',
+            color: isRuleEngineResult ? '#f59e0b' : '#6b7280',
+        },
+        {
+            name: 'PII Masking',
+            status: 'done',
+            detail: hasPii ? `Detected: ${piiTypes.join(', ')}` : 'No PII detected in this email',
+            color: hasPii ? '#ef4444' : '#22c55e',
+        },
+        {
+            name: 'AI Classification',
+            status: 'done',
+            detail: `${cls.priority} / ${cls.category} · ${(cls.confidence * 100).toFixed(0)}% confidence`,
+            color: cls.priority === 'critical' ? '#ef4444' : cls.priority === 'high' ? '#f97316' : '#6366f1',
+        },
+        {
+            name: 'Draft Generation',
+            status: draft ? 'done' : 'pending',
+            detail: draft ? `Quality: ${draft.quality || 'balanced'} · PII shield: ${draft.pii_redacted ? 'active' : 'clean'}` : 'Not yet generated',
+            color: draft ? '#10b981' : '#6b7280',
+        },
+    ];
+
+    return (
+        <div className="pipeline-trace">
+            <button className="pipeline-trace-toggle" onClick={() => setOpen(!open)}>
+                <div className="pipeline-trace-toggle-left">
+                    <Sparkles size={12} />
+                    <span>AI Pipeline Trace</span>
+                    <span className="pipeline-trace-count">{steps.filter(s => s.status === 'done').length}/{steps.length} steps</span>
+                </div>
+                {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {open && (
+                <div className="pipeline-trace-body animate-slide-up">
+                    {steps.map((step, i) => (
+                        <div key={i} className={`pipeline-step pipeline-step-${step.status}`}>
+                            <div className="pipeline-step-indicator" style={{ background: step.status === 'done' ? step.color : 'var(--border)' }}>
+                                {step.status === 'done' ? <Check size={10} /> : <span className="pipeline-step-num">{i + 1}</span>}
+                            </div>
+                            {i < steps.length - 1 && (
+                                <div className="pipeline-step-line" style={{ background: steps[i + 1].status === 'done' ? steps[i + 1].color + '40' : 'var(--border)' }} />
+                            )}
+                            <div className="pipeline-step-content">
+                                <span className="pipeline-step-name">{step.name}</span>
+                                <span className="pipeline-step-detail">{step.detail}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function ThreadMessage({ msg, isExpanded, onToggle, isLatest, whiteMode }) {
     const isSent = msg.is_sent;
     return (
@@ -341,13 +416,24 @@ function ThreadMessage({ msg, isExpanded, onToggle, isLatest, whiteMode }) {
         </div>
     );
 }
-function EmailDetail({ email, onUpdate, onReload }) {
+const getConflictingEmailId = (eventId) => {
+    if (!eventId) return null;
+    if (eventId.startsWith('auto-')) {
+        return eventId.replace('auto-', '');
+    }
+    return null;
+};
+function EmailDetail({ email, onUpdate, onReload, onSelect, autoDraft, clearAutoDraft }) {
     const [busy, setBusy] = useState(null);
     const [toast, setToast] = useState(null);
     const [draftQuality, setDraftQuality] = useState('balanced');
     const [editedDraft, setEditedDraft] = useState(null);
     const [showQuality, setShowQuality] = useState(false);
     const [whiteMode, setWhiteMode] = useState(false);
+    const [sendReschedule, setSendReschedule] = useState(false);
+    const [conflictEventUnscheduled, setConflictEventUnscheduled] = useState(false);
+    const [rescheduleSent, setRescheduleSent] = useState(false);
+    const [sendingReschedule, setSendingReschedule] = useState(false);
     // Thread state
     const [thread, setThread] = useState([]);
     const [expandedMsgs, setExpandedMsgs] = useState(new Set());
@@ -395,6 +481,10 @@ function EmailDetail({ email, onUpdate, onReload }) {
     useEffect(() => {
         if (!email) return;
         setLoadingThread(true);
+        setSendReschedule(false);
+        setConflictEventUnscheduled(false);
+        setRescheduleSent(false);
+        setSendingReschedule(false);
         fetchThread(email.id)
             .then(msgs => {
                 setThread(msgs);
@@ -414,6 +504,12 @@ function EmailDetail({ email, onUpdate, onReload }) {
             markAsRead(email.id).catch(() => {});
         }
     }, [email?.id, email?.is_read]);
+    useEffect(() => {
+        if (autoDraft && email && !busy) {
+            handleDraft();
+            if (clearAutoDraft) clearAutoDraft();
+        }
+    }, [autoDraft, email?.id]);
     if (!email) {
         return (
             <div className="email-detail email-detail-empty" id="email-detail-empty">
@@ -462,7 +558,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
             setBusy(null);
         }
     };
-    const handleDraft = async () => {
+    async function handleDraft() {
         setBusy('draft');
         try {
             if (isOutlook) {
@@ -499,7 +595,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
         } finally {
             setBusy(null);
         }
-    };
+    }
     const handleApprove = async () => {
         setBusy('approve');
         try {
@@ -507,7 +603,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
             const sortedThread = [...thread].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             const latestReceived = sortedThread.reverse().find(m => !m.is_sent);
             const replyTargetId = latestReceived?.id || email.id;
-            const result = await approveDraft(replyTargetId);
+            const result = await approveDraft(replyTargetId, sendReschedule);
             const updated = await fetchEmail(email.id);
             onUpdate(updated);
             setEditedDraft(null);
@@ -520,7 +616,11 @@ function EmailDetail({ email, onUpdate, onReload }) {
                     setExpandedMsgs(new Set([msgs[msgs.length - 1].id]));
                 }
             });
-            showToast('Reply sent successfully! ✉️');
+            if (result.reschedule_sent) {
+                showToast('Approved! Reply and Reschedule Request sent successfully! ✉️📅');
+            } else {
+                showToast('Reply sent successfully! ✉️');
+            }
         } catch (err) {
             showToast(err.message, 'error');
         } finally {
@@ -625,6 +725,10 @@ function EmailDetail({ email, onUpdate, onReload }) {
                             <span key={i} className="explanation-pill">{f}</span>
                         ))}
                     </div>
+                )}
+                {/* AI Pipeline Trace — collapsible observability panel */}
+                {cls && (
+                    <PipelineTrace email={email} classification={cls} draft={draft} />
                 )}
             </div>
             {/* Actions */}
@@ -769,6 +873,131 @@ function EmailDetail({ email, onUpdate, onReload }) {
                         <AttachmentsBar attachments={email.attachments} emailId={email.id} />
                     </div>
                 )}
+                {/* Conflict Alert (if conflict exists, whether draft exists or not) */}
+                {(() => {
+                    if (!cls || !cls.conflicting_event_id || conflictEventUnscheduled) return null;
+                    if (draft && draft.conflict_reschedule_draft) return null; // shown in draft section instead
+                    const priorityScale = { 'critical': 4, 'high': 3, 'normal': 2, 'low': 1 };
+                    const currentWeight = priorityScale[cls.priority] || 2;
+                    const conflictWeight = priorityScale[cls.conflicting_event_priority || 'normal'] || 2;
+                    const isOverride = currentWeight > conflictWeight;
+
+                    return (
+                        <div className="conflict-alert-panel animate-slide-up" style={{
+                            margin: '15px 0',
+                            padding: '16px',
+                            border: `1px solid ${isOverride ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                            borderRadius: 'var(--radius-md)',
+                            background: isOverride ? 'rgba(239, 68, 68, 0.05)' : 'rgba(245, 158, 11, 0.05)',
+                            color: 'var(--text-primary)',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <CalendarX size={18} style={{ color: isOverride ? '#ef4444' : '#f59e0b' }} />
+                                <h4 style={{ margin: 0, color: isOverride ? '#ef4444' : '#f59e0b', fontSize: '13px', fontWeight: '700' }}>
+                                    {isOverride ? 'Conflict Detected: Overlap with Low-Priority Commitment' : 'Conflict Detected: Overlap with Higher-Priority Commitment'}
+                                </h4>
+                            </div>
+                            <p style={{ fontSize: '12px', margin: '0 0 12px 0', color: 'var(--text-secondary)' }}>
+                                {isOverride 
+                                    ? 'This urgent email conflicts with your existing calendar event. You can unschedule the conflicting event directly or generate a draft reply with a reschedule request.'
+                                    : 'This email conflicts with an existing higher-priority commitment on your calendar. You can generate a draft reply to politely ask the sender of this email to reschedule.'}
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {isOverride && (
+                                    <button
+                                        className="unschedule-btn"
+                                        onClick={async () => {
+                                            try {
+                                                setBusy('unscheduling');
+                                                await deleteCalendarEvent(cls.conflicting_event_id);
+                                                setConflictEventUnscheduled(true);
+                                                showToast('Successfully unscheduled the conflicting casual event! 📅❌');
+                                                if (onReload) onReload();
+                                            } catch (err) {
+                                                showToast(`Failed to unschedule event: ${err.message || err}`, 'error');
+                                            } finally {
+                                                setBusy(null);
+                                            }
+                                        }}
+                                        disabled={busy !== null}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '8px 16px',
+                                            fontSize: '11px',
+                                            fontWeight: '600',
+                                            borderRadius: '4px',
+                                            border: '1px solid #ef4444',
+                                            background: 'rgba(239, 68, 68, 0.05)',
+                                            color: '#ef4444',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        <CalendarX size={12} />
+                                        Unschedule Conflicting Event
+                                    </button>
+                                )}
+                                
+                                {isOverride ? (
+                                    <button
+                                        className="btn-resched-select-lower"
+                                        onClick={() => {
+                                            const targetId = getConflictingEmailId(cls.conflicting_event_id);
+                                            if (targetId) {
+                                                onSelect(targetId, { autoDraft: true });
+                                                showToast('Opening conflicting lower-priority email to draft reschedule request...');
+                                            } else {
+                                                showToast('Could not find conflicting email to reschedule', 'error');
+                                            }
+                                        }}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '8px 16px',
+                                            fontSize: '11px',
+                                            fontWeight: '600',
+                                            borderRadius: '4px',
+                                            border: '1px solid #f59e0b',
+                                            background: '#f59e0b',
+                                            color: '#1e1b4b',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        <Reply size={12} />
+                                        Reschedule Conflicting Event
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="btn-draft-direct"
+                                        onClick={handleDraft}
+                                        disabled={busy !== null}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '8px 16px',
+                                            fontSize: '11px',
+                                            fontWeight: '600',
+                                            borderRadius: '4px',
+                                            border: '1px solid #f59e0b',
+                                            background: '#f59e0b',
+                                            color: '#1e1b4b',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        <Sparkles size={12} />
+                                        Generate AI Reschedule Reply
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
                 {/* AI Draft (shown if draft exists but reply not open) */}
                 {draft && !showReply && (
                     <div className="detail-draft animate-slide-up">
@@ -805,8 +1034,211 @@ function EmailDetail({ email, onUpdate, onReload }) {
                             onChange={(e) => setEditedDraft(e.target.value)}
                             rows={6}
                         />
+                        {draft.conflict_reschedule_draft && (() => {
+                            const isOverrideDraft = draft.conflict_reschedule_draft.type !== 'yield';
+                            return (
+                                <div className="reschedule-draft-box animate-slide-up" style={{
+                                    margin: '10px 0',
+                                    padding: '12px',
+                                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                                    borderRadius: 'var(--radius-md)',
+                                    background: 'rgba(245, 158, 11, 0.05)',
+                                    color: 'var(--text-primary)',
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                        {isOverrideDraft && (
+                                            <input
+                                                type="checkbox"
+                                                id="send-reschedule-checkbox"
+                                                checked={sendReschedule}
+                                                onChange={(e) => setSendReschedule(e.target.checked)}
+                                                disabled={conflictEventUnscheduled}
+                                                style={{ marginTop: '3px', cursor: conflictEventUnscheduled ? 'not-allowed' : 'pointer' }}
+                                            />
+                                        )}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            {isOverrideDraft ? (
+                                                <label htmlFor="send-reschedule-checkbox" style={{
+                                                    fontSize: '12px',
+                                                    fontWeight: '600',
+                                                    color: conflictEventUnscheduled ? 'var(--text-muted)' : '#f59e0b',
+                                                    cursor: conflictEventUnscheduled ? 'not-allowed' : 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px'
+                                                }}>
+                                                    <CalendarPlus size={13} />
+                                                    Conflict detected: Reschedule low-priority commitment?
+                                                </label>
+                                            ) : (
+                                                <label style={{
+                                                    fontSize: '12px',
+                                                    fontWeight: '600',
+                                                    color: '#f59e0b',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    marginBottom: '4px'
+                                                }}>
+                                                    <CalendarPlus size={13} />
+                                                    Conflict detected: Reschedule this lower-priority commitment?
+                                                </label>
+                                            )}
+                                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                {isOverrideDraft 
+                                                    ? <>Politely ask <strong>{draft.conflict_reschedule_draft.recipient}</strong> to reschedule <em>"{draft.conflict_reschedule_draft.event_title}"</em>.</>
+                                                    : <>Politely ask <strong>{draft.conflict_reschedule_draft.recipient}</strong> to reschedule <em>"{draft.conflict_reschedule_draft.event_title}"</em> (this meeting).</>}
+                                            </div>
+                                            <div style={{
+                                                fontSize: '11px',
+                                                color: 'var(--text-secondary)',
+                                                background: 'rgba(0,0,0,0.25)',
+                                                padding: '8px',
+                                                borderRadius: 'var(--radius-sm)',
+                                                marginTop: '6px',
+                                                fontFamily: 'var(--font-mono)',
+                                                whiteSpace: 'pre-wrap',
+                                                borderLeft: '2.5px solid #f59e0b'
+                                            }}>
+                                                <strong>Subject:</strong> {draft.conflict_reschedule_draft.subject}<br/><br/>
+                                                {draft.conflict_reschedule_draft.body}
+                                            </div>
+
+                                            <div style={{
+                                                display: 'flex',
+                                                gap: '8px',
+                                                marginTop: '12px',
+                                                flexWrap: 'wrap'
+                                            }}>
+                                                {isOverrideDraft ? (
+                                                    <>
+                                                        <button
+                                                            className="unschedule-btn"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    setBusy('unscheduling');
+                                                                    await deleteCalendarEvent(draft.conflict_reschedule_draft.event_id);
+                                                                    setConflictEventUnscheduled(true);
+                                                                    setSendReschedule(false);
+                                                                    showToast('Successfully unscheduled the conflicting casual event! 📅❌');
+                                                                    if (onReload) onReload();
+                                                                } catch (err) {
+                                                                    showToast(`Failed to unschedule event: ${err.message || err}`, 'error');
+                                                                } finally {
+                                                                    setBusy(null);
+                                                                }
+                                                            }}
+                                                            disabled={conflictEventUnscheduled || busy !== null}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                padding: '6px 12px',
+                                                                fontSize: '11px',
+                                                                fontWeight: '600',
+                                                                borderRadius: '4px',
+                                                                border: '1px solid #ef4444',
+                                                                background: conflictEventUnscheduled ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)',
+                                                                color: '#ef4444',
+                                                                cursor: conflictEventUnscheduled ? 'not-allowed' : 'pointer',
+                                                                transition: 'all 0.2s',
+                                                                opacity: conflictEventUnscheduled ? 0.6 : 1
+                                                            }}
+                                                        >
+                                                            <CalendarX size={12} />
+                                                            {conflictEventUnscheduled ? 'Event Unscheduled' : 'Unschedule Conflicting Event'}
+                                                        </button>
+
+                                                        <button
+                                                            className="btn-resched-select-lower"
+                                                            onClick={() => {
+                                                                const targetId = getConflictingEmailId(draft.conflict_reschedule_draft.event_id);
+                                                                if (targetId) {
+                                                                    onSelect(targetId, { autoDraft: true });
+                                                                    showToast('Opening conflicting lower-priority email to draft reschedule request...');
+                                                                } else {
+                                                                    showToast('Could not find conflicting email to reschedule', 'error');
+                                                                }
+                                                            }}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                padding: '6px 12px',
+                                                                fontSize: '11px',
+                                                                fontWeight: '600',
+                                                                borderRadius: '4px',
+                                                                border: '1px solid #f59e0b',
+                                                                background: '#f59e0b',
+                                                                color: '#1e1b4b',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.2s',
+                                                            }}
+                                                        >
+                                                            <Reply size={12} />
+                                                            Reschedule Conflicting Event
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button
+                                                        className="send-resched-direct-btn"
+                                                        onClick={async () => {
+                                                            try {
+                                                                setSendingReschedule(true);
+                                                                await composeEmail(
+                                                                    [draft.conflict_reschedule_draft.recipient],
+                                                                    [],
+                                                                    [],
+                                                                    draft.conflict_reschedule_draft.subject,
+                                                                    draft.conflict_reschedule_draft.body,
+                                                                    email.account_id || 'mock'
+                                                                );
+                                                                setRescheduleSent(true);
+                                                                showToast('Reschedule request sent successfully! ✉️');
+                                                                try {
+                                                                    await deleteCalendarEvent(draft.conflict_reschedule_draft.event_id);
+                                                                    setConflictEventUnscheduled(true);
+                                                                    if (onReload) onReload();
+                                                                } catch (delErr) {
+                                                                    console.error("Failed to delete event after reschedule send:", delErr);
+                                                                }
+                                                            } catch (err) {
+                                                                showToast(`Failed to send email: ${err.message || err}`, 'error');
+                                                            } finally {
+                                                                setSendingReschedule(false);
+                                                            }
+                                                        }}
+                                                        disabled={rescheduleSent || sendingReschedule}
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            padding: '6px 12px',
+                                                            fontSize: '11px',
+                                                            fontWeight: '600',
+                                                            borderRadius: '4px',
+                                                            border: '1px solid #f59e0b',
+                                                            background: rescheduleSent ? 'rgba(245, 158, 11, 0.1)' : '#f59e0b',
+                                                            color: rescheduleSent ? '#f59e0b' : '#1e1b4b',
+                                                            cursor: rescheduleSent ? 'not-allowed' : 'pointer',
+                                                            transition: 'all 0.2s',
+                                                            opacity: rescheduleSent ? 0.6 : 1
+                                                        }}
+                                                    >
+                                                        <Send size={12} />
+                                                        {rescheduleSent ? 'Reschedule Sent' : sendingReschedule ? 'Sending...' : 'Send Reschedule Request'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                         <div className="draft-footer">
-                            <span className="draft-hint">Edit the draft above, then approve to send via SMTP</span>
+                            <span className="draft-hint" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Sparkles size={11} style={{ opacity: 0.8 }} /> AI responses can make mistakes. Verify before sending.
+                            </span>
                             <div className="draft-pii-shield">
                                 <Shield size={12} />
                                 PII Shield Active
@@ -822,15 +1254,35 @@ function EmailDetail({ email, onUpdate, onReload }) {
                             <span className="action-items-count">{actionItems.filter(a => a.status === 'pending').length} pending</span>
                         </div>
                         <div className="action-items-list">
-                            {actionItems.map(item => (
-                                <div key={item.id} className={`action-item action-item-${item.status}`}>
+                            {actionItems.map(item => {
+                                const isOverdue = item.due_date && item.status === 'pending' && new Date(item.due_date) < new Date();
+                                return (
+                                <div key={item.id} className={`action-item action-item-${item.status}`}
+                                  style={{borderLeft: `3px solid ${item.priority === 'high' ? '#ef4444' : item.priority === 'low' ? '#6b7280' : '#6366f1'}`}}>
                                     <div className="action-item-content">
                                         <span className="action-item-desc">{item.description}</span>
-                                        {item.due_date && (
-                                            <span className="action-item-due">
-                                                <Clock size={11} /> {new Date(item.due_date).toLocaleDateString()}
-                                            </span>
-                                        )}
+                                        <div style={{display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '4px'}}>
+                                            {item.priority && item.priority !== 'normal' && (
+                                                <span style={{
+                                                    fontSize: '10px', fontWeight: 700, padding: '1px 6px',
+                                                    borderRadius: '999px', textTransform: 'uppercase',
+                                                    background: item.priority === 'high' ? 'rgba(239,68,68,0.12)' : 'rgba(107,114,128,0.12)',
+                                                    color: item.priority === 'high' ? '#ef4444' : '#6b7280',
+                                                }}>{item.priority}</span>
+                                            )}
+                                            {isOverdue && (
+                                                <span style={{
+                                                    fontSize: '10px', fontWeight: 700, padding: '1px 6px',
+                                                    borderRadius: '999px', background: 'rgba(239,68,68,0.12)',
+                                                    color: '#ef4444', animation: 'pulse-soft 2s infinite',
+                                                }}>⚠ OVERDUE</span>
+                                            )}
+                                            {item.due_date && !isOverdue && (
+                                                <span className="action-item-due">
+                                                    <Clock size={11} /> {new Date(item.due_date).toLocaleDateString()}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="action-item-actions">
                                         {item.status === 'pending' && (
@@ -861,7 +1313,8 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                         )}
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -909,7 +1362,11 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                     )}
                                 </button>
                             )}
-                            <div className="inline-reply-spacer" />
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', paddingLeft: '12px' }}>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Sparkles size={11} style={{ opacity: 0.7 }} /> AI responses can make mistakes.
+                                </span>
+                            </div>
                             <button
                                 className="btn btn-secondary"
                                 onClick={() => { setShowReply(false); setReplyBody(''); }}

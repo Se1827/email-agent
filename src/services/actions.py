@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone  # noqa: F401 — used at runtime by DB queries
 from typing import Any
 from uuid import uuid4
 
@@ -41,12 +41,15 @@ Rules:
 1. Only extract items that require ACTION from the recipient.
 2. Be specific and concise — each item should be one actionable sentence.
 3. Include due dates if mentioned (as ISO 8601 format).
-4. Do NOT include FYI-only information or context.
-5. If no action items exist, return an empty list.
+4. Assign a priority: "high" for urgent/deadline-driven, "normal" for \
+standard tasks, "low" for nice-to-haves.
+5. Do NOT include FYI-only information or context.
+6. If no action items exist, return an empty list.
 
 Respond ONLY with a JSON array (no markdown, no extra text):
 [
-  {"description": "...", "due_date": "2026-06-15T17:00:00Z" or null}
+  {"description": "...", "due_date": "2026-06-15T17:00:00Z" or null, \
+"priority": "high|normal|low"}
 ]
 """
 
@@ -107,6 +110,9 @@ async def extract_action_items(
             if not desc:
                 continue
             due = item.get("due_date")
+            priority = item.get("priority", "normal")
+            if priority not in ("high", "normal", "low"):
+                priority = "normal"
             action_id = str(uuid4())
 
             # Store in DB
@@ -116,12 +122,14 @@ async def extract_action_items(
                 thread_id=thread_id,
                 description=desc,
                 due_date=due,
+                priority=priority,
             )
             results.append({
                 "id": action_id,
                 "email_id": email_id,
                 "description": desc,
                 "due_date": due,
+                "priority": priority,
                 "status": "pending",
             })
 
@@ -149,6 +157,7 @@ def _store_action_item(
     thread_id: str | None,
     description: str,
     due_date: str | None,
+    priority: str = "normal",
 ) -> None:
     """Store an action item in the database."""
     if not storage_configured():

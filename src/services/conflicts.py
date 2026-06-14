@@ -283,6 +283,7 @@ def format_conflict_context(
     *,
     all_events: list[CalendarEvent] | None = None,
     candidate_is_all_day: bool = False,
+    source_email_id: str | None = None,
 ) -> str:
     """Format relevant events for the prompt with explicit conflict/free labels.
 
@@ -308,13 +309,17 @@ def format_conflict_context(
     lines = ["--- Calendar context (events related to this email) ---"]
     any_conflict = False
     for ev in events:
+        # Skip events auto-created from the same email being classified
+        is_self_event = source_email_id and ev.source_email_id == source_email_id
         date_str = ev.start.strftime("%a %b %d, %H:%M")
         end_str = ev.end.strftime("%H:%M") if ev.end and ev.end != ev.start else ""
         time_display = "All day" if ev.is_all_day else f"{date_str}–{end_str}" if end_str else date_str
         attendees = ", ".join(ev.attendees) if ev.attendees else "just you"
         location = f" @ {ev.location}" if ev.location else ""
 
-        if cand_s is not None:
+        if is_self_event:
+            label = " [ALREADY SCHEDULED from this email]"
+        elif cand_s is not None:
             ev_s = wall_clock(ev.start)
             ev_e = wall_clock(ev.end) if ev.end else ev_s + timedelta(hours=1)
             same_day = ev_s.date() == cand_s.date()
@@ -335,8 +340,13 @@ def format_conflict_context(
 
     # ── Full-calendar conflict check ──────────────────────────────────
     if cand_s is not None and not any_conflict and all_events:
+        # Exclude self-events from the full-calendar conflict check
+        check_events = [
+            ev for ev in all_events
+            if not (source_email_id and ev.source_email_id == source_email_id)
+        ]
         full_conflict = check_full_calendar_conflict(
-            cand_s, cand_e, candidate_is_all_day, all_events,
+            cand_s, cand_e, candidate_is_all_day, check_events,
         )
         if full_conflict:
             any_conflict = True

@@ -758,6 +758,109 @@
   background: rgba(99, 102, 241, 0.15);
   border-color: rgba(99, 102, 241, 0.3);
 }
+/* ---- Pipeline Trace ---- */
+.pipeline-trace {
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+.pipeline-trace-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background var(--transition-fast);
+}
+.pipeline-trace-toggle:hover {
+  background: var(--bg-hover);
+}
+.pipeline-trace-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pipeline-trace-count {
+  padding: 1px 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 600;
+}
+.pipeline-trace-body {
+  padding: 8px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.pipeline-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 4px;
+}
+.pipeline-step-indicator {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  z-index: 1;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+.pipeline-step-num {
+  font-size: 10px;
+  font-weight: 700;
+}
+.pipeline-step-line {
+  position: absolute;
+  left: 10px;
+  top: 22px;
+  width: 2px;
+  height: calc(100% - 4px);
+  border-radius: 1px;
+  z-index: 0;
+}
+.pipeline-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0 8px;
+  min-width: 0;
+}
+.pipeline-step-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.pipeline-step-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.pipeline-step-pending .pipeline-step-name {
+  color: var(--text-muted);
+}
+.pipeline-step-pending .pipeline-step-indicator {
+  opacity: 0.5;
+}
 /* ---- Draft Variant Tabs ---- */
 .draft-variant-tabs {
   display: flex;

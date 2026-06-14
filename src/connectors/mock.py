@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from src.auth import read_json_file
 from src.models.email import Email
 
 
 def load_emails(data_file: Path) -> list[Email]:
     """Read seed emails from a JSON file and return Email model instances."""
-    with open(data_file, encoding="utf-8") as f:
-        raw = json.load(f)
+    raw = read_json_file(data_file, default=[])
     return [Email.model_validate(entry) for entry in raw]
+

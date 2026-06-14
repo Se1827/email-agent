@@ -102,5 +102,8 @@ def format_calendar_context(events: list[CalendarEvent]) -> str:
     for ev in events:
         date_str = ev.start.strftime("%a %b %d, %H:%M")
         attendees = ", ".join(ev.attendees) if ev.attendees else "just you"
-        lines.append(f"  - {ev.title} on {date_str} (with {attendees})")
+        line = f"  - {ev.title} on {date_str} (with {attendees})"
+        if ev.source_email_id:
+            line += f" [from email: {ev.source_email_id}]"
+        lines.append(line)
     return "\n".join(lines)

@@ -5,6 +5,7 @@ import {
   X, Pencil, Check, RefreshCw, ExternalLink, Copy,
   ChevronRight, AlertTriangle, CheckCircle, WifiOff,
   Wifi, Loader, Info, Zap, Brain, ListChecks, Sparkles,
+  Sunrise, Clock,
 } from 'lucide-react';
 import {
   createAccount, deleteAccount, fetchAccounts, fetchStorageStats,
@@ -13,7 +14,8 @@ import {
   fetchStorageSetupStatus, setupStorage,
   triggerGraphLogin, fetchGraphLoginStatus,
   fetchAIMode, updateAIMode,
-  fetchPreferences, createPreference, deletePreference, request
+  fetchPreferences, createPreference, deletePreference, request,
+  fetchDigestConfig, saveDigestConfig, triggerDigestGeneration,
 } from '../api';
 import './SettingsPage.css';
 
@@ -38,6 +40,7 @@ const EMPTY_ACCOUNT = {
 const TABS = [
   { id: 'accounts', label: 'Accounts', icon: Server },
   { id: 'ai', label: 'AI & LLM', icon: Cpu },
+  { id: 'digest', label: 'Daily Digest', icon: Sunrise },
   { id: 'graph', label: 'Microsoft Graph', icon: Link2 },
   { id: 'privacy', label: 'Privacy', icon: Shield },
   { id: 'storage', label: 'Storage & DB', icon: Database },
@@ -93,6 +96,7 @@ function SettingsPage() {
         <div className="settings-content">
           {tab === 'accounts' && <AccountsTab showToast={showToast} />}
           {tab === 'ai' && <AITab showToast={showToast} />}
+          {tab === 'digest' && <DigestTab showToast={showToast} />}
           {tab === 'graph' && <GraphTab showToast={showToast} />}
           {tab === 'privacy' && <PrivacyTab showToast={showToast} />}
           {tab === 'storage' && <StorageTab showToast={showToast} />}
@@ -250,10 +254,19 @@ function AITab({ showToast }) {
   const [showAddPref, setShowAddPref] = useState(false);
   const [newPref, setNewPref] = useState({ pref_type: 'general', pref_key: '', pref_value: '' });
 
+  const loadPrefs = async () => {
+    try {
+      const data = await fetchPreferences();
+      setPreferences(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchSettings().then(data => { setS(data); setKeyInput(''); }).catch(() => { });
     fetchAIMode().then(data => setAiMode(data.ai_mode)).catch(() => {});
-    fetchPreferences().then(data => setPreferences(data)).catch(() => {});
+    loadPrefs();
   }, []);
 
   const save = async () => {
@@ -390,8 +403,7 @@ function AITab({ showToast }) {
               <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:'rgba(255,255,255,0.03)',borderRadius:8,fontSize:13}}>
                 <div style={{display:'flex',gap:8,alignItems:'center'}}>
                   <span className={`s-badge`} style={{fontSize:10}}>{p.pref_type}</span>
-                  <strong>{p.pref_key}</strong>
-                  <span style={{color:'var(--text-secondary)'}}>{p.pref_value}</span>
+                  <span style={{color:'var(--text-primary)', fontWeight:550}}>{p.pref_value}</span>
                 </div>
                 <button className="btn-icon" onClick={() => handleDeletePref(p.id)} title="Remove"><Trash2 size={13} /></button>
               </div>
@@ -400,6 +412,125 @@ function AITab({ showToast }) {
         ) : (
           <p className="s-hint" style={{marginTop:8}}>No preferences set. Add scheduling constraints, drafting instructions, or VIP senders.</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════ DIGEST TAB ═══════════════════════════════════════════════
+function DigestTab({ showToast }) {
+  const [config, setConfig] = useState(null);
+  const [aiMode, setAiMode] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    fetchDigestConfig().then(setConfig).catch(() => setConfig({ enabled: true, wake_time: '08:00', auto_classify: true }));
+    fetchAIMode().then(d => setAiMode(d.ai_mode)).catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const result = await saveDigestConfig(config);
+      setConfig(result);
+      showToast('Digest settings saved.');
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const result = await triggerDigestGeneration();
+      const msg = result.auto_classified_count > 0
+        ? `Digest generated! ${result.auto_classified_count} emails auto-classified.`
+        : 'Digest generated!';
+      showToast(msg);
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setGenerating(false); }
+  };
+
+  // Compute next scheduled time
+  const getNextDigestTime = () => {
+    if (!config?.wake_time) return null;
+    const [h, m] = config.wake_time.split(':').map(Number);
+    const now = new Date();
+    const target = new Date(now);
+    target.setHours(h, m, 0, 0);
+    if (target <= now) target.setDate(target.getDate() + 1);
+    return target.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (!config) return <div className="s-loading"><Loader size={20} className="spin" /> Loading…</div>;
+
+  return (
+    <div className="stab">
+      <div className="stab-header">
+        <div><h2>Daily Digest</h2><p>Configure your morning email briefing with AI-powered insights.</p></div>
+        <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+          <Sunrise size={14} /> {generating ? 'Generating…' : 'Generate Now'}
+        </button>
+      </div>
+
+      {/* Enable toggle */}
+      <div className="s-section">
+        <label className="form-checkbox-row s-field-label" style={{ cursor: 'pointer' }}>
+          <input type="checkbox" checked={config.enabled} onChange={e => setConfig(c => ({ ...c, enabled: e.target.checked }))} />
+          <span>Enable Daily Digest</span>
+        </label>
+        <p className="s-hint">When enabled, a rich digest will be pre-generated at your configured wake time.</p>
+      </div>
+
+      {config.enabled && (
+        <>
+          {/* Wake time */}
+          <div className="s-section">
+            <div className="s-field-label"><Clock size={14} style={{verticalAlign:'text-bottom',marginRight:4}} />Wake Time</div>
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <input
+                type="time"
+                className="input"
+                style={{width:140}}
+                value={config.wake_time}
+                onChange={e => setConfig(c => ({ ...c, wake_time: e.target.value }))}
+              />
+              {getNextDigestTime() && (
+                <span className="s-hint" style={{margin:0}}>Next: {getNextDigestTime()}</span>
+              )}
+            </div>
+            <p className="s-hint">Your digest will be ready when you wake up. All pending emails will be analyzed and summarized.</p>
+          </div>
+
+          {/* Auto-classify */}
+          <div className="s-section">
+            <label className="form-checkbox-row s-field-label" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={config.auto_classify}
+                onChange={e => setConfig(c => ({ ...c, auto_classify: e.target.checked }))}
+                disabled={aiMode === 'classic'}
+              />
+              <span>Auto-Classify Before Digest</span>
+              {config.auto_classify && <span className="s-badge s-badge--on">AI-Rich</span>}
+            </label>
+            {aiMode === 'classic' && (
+              <div className="s-warning" style={{marginTop:8}}>
+                <AlertTriangle size={13} /> Auto-classify requires <strong>AI-Rich mode</strong>. Switch to AI-Rich in the AI & LLM tab first.
+              </div>
+            )}
+            <p className="s-hint">When enabled, today's unclassified emails (last 24h) will be automatically classified using the AI pipeline before the digest. Older emails are skipped to save AI tokens.</p>
+          </div>
+
+          {/* Info box */}
+          <div className="s-section s-info-box">
+            <Sparkles size={14} /> The digest shows <strong>all today's actionable emails</strong>, highlights <strong>deadline terms</strong> (like "by Friday EOD", "ASAP"), and lets you create calendar events or actions right from each card. If your inbox is clear, you'll see a celebration! 🎉
+          </div>
+        </>
+      )}
+
+      <div className="editor-actions">
+        <button className="btn btn-primary" onClick={save} disabled={saving}><Save size={14} />{saving ? 'Saving…' : 'Save Digest Settings'}</button>
       </div>
     </div>
   );

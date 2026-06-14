@@ -50,6 +50,7 @@ def _patch_loader_deps(monkeypatch, *, db_payloads, source_emails):
         data_dir=Path("."),
     )
     monkeypatch.setattr(routes, "get_settings", lambda: settings)
+    monkeypatch.setattr(routes, "_get_background_token", lambda: "dummy-token")
     monkeypatch.setattr(routes, "load_email_states", lambda inbox=None: db_payloads)
     monkeypatch.setattr(routes, "_load_email_source", lambda: source_emails)
     monkeypatch.setattr(routes, "_store_email_memory", lambda email: None)

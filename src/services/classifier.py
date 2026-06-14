@@ -25,7 +25,7 @@ from src.llm import client as llm
 from src.llm.date_fast import resolve_fast
 from src.llm.date_resolver import ResolvedDate, resolve_proposed_datetime
 from src.llm.prompts import CLASSIFY_SYSTEM, CLASSIFY_USER
-from src.models.email import CalendarEvent, Classification, Email, Priority
+from src.models.email import CalendarEvent, Category, Classification, Email, Priority
 from src.services.conflicts import (
     check_full_calendar_conflict,
     format_conflict_context,
@@ -34,7 +34,7 @@ from src.services.conflicts import (
 )
 from src.services.pii import PrivacyGateway
 from src.services.rules import evaluate_rules
-from src.storage import safe_store_pii_mappings
+from src.storage import safe_store_pii_mappings, safe_delete_calendar_event_record, load_email_state
 from src.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -298,6 +298,14 @@ def filter_relevant_events(
 
 # ── Auto-event creation from meeting / action-required emails ──────────────
 
+_MEETING_KEYWORDS = re.compile(
+    r"\b(meet|meeting|standup|sync|call|demo|review|retro|planning|"
+    r"catch[\s-]?up|huddle|1[:\-]1|one[\s-]on[\s-]one|schedule|"
+    r"let'?s\s+meet|invite|calendar)\b",
+    re.IGNORECASE,
+)
+
+
 def extract_meeting_event(
     email: Email,
     classification: Classification,
@@ -305,20 +313,46 @@ def extract_meeting_event(
     *,
     resolved_date: ResolvedDate | None = None,
 ) -> CalendarEvent | None:
-    """Create a calendar event from a classified meeting or action-required email.
+    """Create a calendar event from an email that proposes a meeting or deadline.
 
     Uses the LLM-resolved date when available, falling back to regex extraction.
 
-    Returns None if:
-    - The email is not classified as meeting or action-required
-    - No date can be resolved
+    Event creation triggers when ANY of:
+      1. Category is explicitly "meeting" or "action-required"
+      2. A date was resolved AND the email text contains meeting keywords
+      3. The classification reasoning mentions "meeting"
 
+    Returns None if no date can be resolved or category is "spam".
     For meeting emails: skips creation if a conflicting event exists.
     For action-required emails: always creates the event (no conflict check).
     """
     category = classification.category.value
-    if category not in ("meeting", "action-required"):
+    if category == "spam":
         return None
+
+    # ── Determine if this email warrants an auto-event ────────────────────
+    explicit_category = category in ("meeting", "action-required")
+
+    if not explicit_category:
+        # Check for meeting signals in the email text + reasoning
+        clean_body = _strip_quoted_text(email.body)
+        combined_text = f"{email.subject} {clean_body} {classification.reasoning}"
+        has_meeting_signal = bool(_MEETING_KEYWORDS.search(combined_text))
+        has_date = resolved_date is not None
+
+        if not (has_meeting_signal and has_date):
+            log.debug(
+                "auto_event_skipped_no_signal",
+                extra={
+                    "email_id": email.id,
+                    "category": category,
+                    "has_meeting_signal": has_meeting_signal,
+                    "has_date": has_date,
+                },
+            )
+            return None
+        # Treat as a meeting since it has both meeting keywords and a date
+        category = "meeting"
 
     # ── Resolve the date ──────────────────────────────────────────────────
     if resolved_date:
@@ -345,15 +379,26 @@ def extract_meeting_event(
 
     sender_name = email.sender.split("@")[0].replace(".", " ").title()
 
+    priority_val = classification.priority.value
     if category == "action-required":
         title_prefix = "Action"
         color = "#ef4444"   # red
     else:
         title_prefix = "Meeting"
-        color = "#f59e0b"   # amber
+        if priority_val == "critical":
+            color = "#ef4444"  # red
+            title_prefix = "Urgent Meeting"
+        elif priority_val == "high":
+            color = "#f97316"  # orange
+            title_prefix = "Important Meeting"
+        elif priority_val == "normal":
+            color = "#f59e0b"  # amber
+        else:
+            color = "#3b82f6"  # blue
+            title_prefix = "Casual Meeting"
 
     candidate = CalendarEvent(
-        id=f"auto-{email.id[:12]}",
+        id=f"auto-{email.id}",
         title=f"{title_prefix}: {sender_name} — {email.subject[:40]}",
         start=meeting_start,
         end=meeting_end,
@@ -361,23 +406,49 @@ def extract_meeting_event(
         color=color,
         attendees=[email.sender] + email.recipients[:5],
         is_all_day=is_all_day,
+        source_email_id=email.id,
+        priority=priority_val,
     )
 
     # Conflict check — meetings only; action-required always goes through
     if category == "meeting" and existing_events:
-        conflict = has_calendar_conflict(candidate, existing_events)
+        # Exclude events that were auto-created from this same email
+        non_self_events = [
+            ev for ev in existing_events
+            if ev.source_email_id != email.id
+        ]
+        conflict = has_calendar_conflict(candidate, non_self_events)
         if conflict:
-            log.info(
-                "auto_event_skipped_conflict",
-                extra={
-                    "email_id": email.id,
-                    "candidate_title": candidate.title,
-                    "candidate_start": meeting_start.isoformat(),
-                    "conflicting_event": conflict.title,
-                    "conflicting_start": conflict.start.isoformat(),
-                },
-            )
-            return None
+            # Check priorities: candidate vs conflict
+            priority_scale = {"critical": 4, "high": 3, "normal": 2, "low": 1}
+            candidate_p = priority_scale.get(classification.priority.value, 0)
+            
+            conflict_priority = conflict.priority or "normal"
+            conflict_p = priority_scale.get(conflict_priority, 2)
+            if candidate_p > conflict_p:
+                log.info(
+                    "auto_event_override_conflict_allowed",
+                    extra={
+                        "email_id": email.id,
+                        "candidate_title": candidate.title,
+                        "conflicting_event": conflict.title,
+                    }
+                )
+                # Do NOT delete the conflicting event immediately here.
+                # Keeping both on the calendar allows the reschedule draft logic
+                # to detect the conflict and display the resolution action to the user.
+            else:
+                log.info(
+                    "auto_event_skipped_conflict",
+                    extra={
+                        "email_id": email.id,
+                        "candidate_title": candidate.title,
+                        "candidate_start": meeting_start.isoformat(),
+                        "conflicting_event": conflict.title,
+                        "conflicting_start": conflict.start.isoformat(),
+                    },
+                )
+                return None
 
     return candidate
 
@@ -466,6 +537,7 @@ async def classify(
         relevant_events, _cs, _ce,
         all_events=all_events,
         candidate_is_all_day=_candidate_is_all_day,
+        source_email_id=email.id,
     )
 
     user_msg = CLASSIFY_USER.format(
@@ -499,17 +571,36 @@ async def classify(
     # Only when the LLM resolver found a proposed date (avoids false
     # positives on newsletters / informational emails).
     if resolved and _cs is not None:
+        # Exclude calendar events that were auto-created from THIS email
+        # so re-classification doesn't falsely report "not available".
+        non_self_events = [
+            ev for ev in all_events
+            if ev.source_email_id != email.id
+        ]
+        # Check if an event already exists for this email (user already
+        # accepted / auto-added this meeting).
+        already_scheduled = any(
+            ev.source_email_id == email.id for ev in all_events
+        )
         conflict = check_full_calendar_conflict(
             wall_clock(_cs), wall_clock(_ce),
-            _candidate_is_all_day, all_events,
+            _candidate_is_all_day, non_self_events,
         )
-        if conflict:
+        if already_scheduled and not conflict:
+            parsed.reasoning = (
+                f"{parsed.reasoning} — "
+                f"This meeting is already on your calendar."
+            )
+            parsed.explanation_factors.append("meeting already on calendar")
+        elif conflict:
             parsed.reasoning = (
                 f"{parsed.reasoning} — "
                 f"You are NOT available at the proposed time: "
                 f"conflict with \"{conflict.title}\""
             )
             parsed.explanation_factors.append(f"conflict with \"{conflict.title}\"")
+            parsed.conflicting_event_id = conflict.id
+            parsed.conflicting_event_priority = conflict.priority or "normal"
         else:
             parsed.reasoning = (
                 f"{parsed.reasoning} — "

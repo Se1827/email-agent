@@ -43,21 +43,31 @@ async def run_calendar_agent(ctx: SharedAgentContext) -> None:
         findings.resolved_time = resolved.time
         findings.is_all_day = resolved.is_all_day
 
+        # Exclude events auto-created from THIS email to avoid self-conflicts
+        non_self_events = [
+            ev for ev in ctx.calendar_events
+            if ev.source_email_id != email.id
+        ]
+
         # ── Step 2: Find conflicts ─────────────────────────────────────
         conflicts = find_conflicts(
             resolved.start,
             resolved.end,
-            ctx.calendar_events,
+            non_self_events,
             candidate_is_all_day=resolved.is_all_day,
         )
         findings.conflicts = conflicts
 
         # ── Step 3: Find free slots on the same day ────────────────────
         if conflicts:
-            free = find_free_slots(resolved.date, ctx.calendar_events)
+            free = find_free_slots(resolved.date, non_self_events)
             findings.free_slots = free
 
         # ── Step 4: Build a human-readable availability summary ────────
+        # Check if this meeting is already on the calendar from this email
+        already_scheduled = any(
+            ev.source_email_id == email.id for ev in ctx.calendar_events
+        )
         if conflicts:
             conflict_names = ", ".join(f'"{c.event.title}"' for c in conflicts)
             slot_info = ""
@@ -70,6 +80,13 @@ async def run_calendar_agent(ctx: SharedAgentContext) -> None:
             findings.availability_summary = (
                 f"NOT available at the proposed time. "
                 f"Conflicts with: {conflict_names}.{slot_info}"
+            )
+        elif already_scheduled:
+            findings.availability_summary = (
+                f"Available at the proposed time "
+                f"({resolved.start.strftime('%A, %b %d')} "
+                f"{'all day' if resolved.is_all_day else resolved.start.strftime('%H:%M')}). "
+                f"This meeting is already on your calendar."
             )
         else:
             findings.availability_summary = (

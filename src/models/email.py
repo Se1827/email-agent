@@ -72,6 +72,9 @@ class Classification(BaseModel):
     reasoning: str = ""
     explanation_factors: list[str] = Field(default_factory=list)
     # e.g. ["sender is VIP", "deadline mentioned", "related meeting tomorrow"]
+    conflicting_event_id: Optional[str] = None
+    conflicting_event_priority: Optional[str] = None
+
 class DraftReply(BaseModel):
     body: str                    # primary draft (backward compat)
     alternatives: list[str] = Field(default_factory=list)  # 0-2 alternative drafts
@@ -79,6 +82,7 @@ class DraftReply(BaseModel):
     quality: str = "balanced"
     pii_redacted: bool = False
     redacted_types: list[str] = Field(default_factory=list)
+    conflict_reschedule_draft: Optional[dict] = None
 class CalendarEvent(BaseModel):
     id: Optional[str] = None
     title: str
@@ -91,6 +95,9 @@ class CalendarEvent(BaseModel):
     account_id: Optional[str] = None
     is_all_day: bool = False
     recurrence: Optional[str] = None
+    # Back-reference to the email that triggered this event's creation.
+    source_email_id: Optional[str] = None
+    priority: str = "normal"
 class Notification(BaseModel):
     id: str
     type: str  # "deadline", "meeting_soon", "urgent_email", "ai_insight"

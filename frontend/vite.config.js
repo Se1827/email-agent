@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: 5173,
+      allowedHosts: ['fitting-internal-hookworm.ngrok-free.app'],
       proxy: {
         '/api': {
           target: `http://localhost:${apiPort}`,

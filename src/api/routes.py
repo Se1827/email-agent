@@ -2,7 +2,7 @@
 from __future__ import annotations
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
@@ -229,6 +229,7 @@ _emails: ThreadSafeDict = ThreadSafeDict()
 _calendar: list[CalendarEvent] = []
 _notifications: list[Notification] = []
 _activity_log: list[dict[str, Any]] = []
+_cached_digest: dict[str, Any] | None = None
 def _log_activity(action: str, detail: str, related_id: str | None = None) -> None:
     """Append an entry to the in-memory activity feed."""
     _activity_log.insert(0, {
@@ -831,12 +832,19 @@ async def classify_email(
     result, resolved_date = await _classify_with_mode(email, _calendar)
     email.classification = result
     # ── Auto-create calendar event from meeting/action-required emails ───
-    auto_event = classifier.extract_meeting_event(
-        email, result, _calendar, resolved_date=resolved_date,
-    )
+    auto_event = None
+    try:
+        auto_event = classifier.extract_meeting_event(
+            email, result, _calendar, resolved_date=resolved_date,
+        )
+        print(f"[AUTO-EVENT] email={email.id[:20]}  category={result.category.value}  resolved_date={'YES' if resolved_date else 'NO'}  auto_event={'CREATED: ' + auto_event.id if auto_event else 'NONE'}")
+    except Exception as exc:
+        print(f"[AUTO-EVENT ERROR] extract_meeting_event CRASHED: {exc}")
+        log.exception("extract_meeting_event_failed", extra={"email_id": email.id, "error": str(exc)})
     if auto_event:
         # Check if we already have an auto-event for this email
         existing_auto = any(e.id == auto_event.id for e in _calendar)
+        print(f"[AUTO-EVENT] existing_auto={existing_auto}  calendar_size={len(_calendar)}")
         if not existing_auto:
             _calendar.append(auto_event)
             safe_store_calendar_event(auto_event, source="auto_from_email")
@@ -901,6 +909,40 @@ async def draft_email_reply(
             status_code=400,
             detail="Classify the email before drafting a reply.",
         )
+
+    # ── Dynamic conflict re-check ──────────────────────────────────────
+    # If the classification has no conflicting_event_id, check if a conflict
+    # appeared on the calendar AFTER classification (e.g. a higher-priority
+    # email arrived and created an auto-event that overlaps).  When detected,
+    # patch the classification and force draft regeneration.
+    if not email.classification.conflicting_event_id and _calendar:
+        auto_id = f"auto-{email.id}"
+        my_event = next(
+            (e for e in _calendar if e.id == auto_id or e.source_email_id == email.id),
+            None,
+        )
+        if my_event:
+            my_s = my_event.start.replace(tzinfo=None)
+            my_e = my_event.end.replace(tzinfo=None)
+            for ev in _calendar:
+                if ev.id == my_event.id:
+                    continue
+                ev_s = ev.start.replace(tzinfo=None)
+                ev_e = ev.end.replace(tzinfo=None)
+                if ev_s < my_e and ev_e > my_s:
+                    email.classification.conflicting_event_id = ev.id
+                    email.classification.conflicting_event_priority = ev.priority or "normal"
+                    force = True  # must regenerate to include reschedule draft
+                    log.info(
+                        "draft_dynamic_conflict_detected",
+                        extra={
+                            "email_id": email_id,
+                            "conflict_event_id": ev.id,
+                            "conflict_title": ev.title,
+                        },
+                    )
+                    break
+
     if email.draft_reply is not None and not force:
         safe_record_event(
             "email.draft_cache_hit",
@@ -929,7 +971,7 @@ async def draft_email_reply(
     _persist_email_state(email)
     return result.model_dump(mode="json")
 @router.post("/emails/{email_id}/approve")
-async def approve_draft(email_id: str) -> dict[str, Any]:
+async def approve_draft(email_id: str, send_reschedule: bool = False) -> dict[str, Any]:
     """Approve the current draft reply and send via SMTP."""
     email = _get_email(email_id)
     if email.draft_reply is None:
@@ -952,6 +994,60 @@ async def approve_draft(email_id: str) -> dict[str, Any]:
         subject_id=email.id,
     )
     _log_activity("approved", f"Draft reply approved for '{email.subject[:40]}'", email.id)
+
+    # ── Reschedule Request Handling ────────────────────────────────────
+    resched = email.draft_reply.conflict_reschedule_draft
+    resched_sent = False
+    if send_reschedule and resched:
+        conflict_id = resched["event_id"]
+        # Remove in-place from _calendar
+        _calendar[:] = [ev for ev in _calendar if ev.id != conflict_id]
+        try:
+            safe_delete_calendar_event_record(conflict_id)
+            log.info("reschedule_conflict_deleted_on_approve", extra={"email_id": email_id, "event_id": conflict_id})
+        except Exception as exc:
+            log.error("Failed to delete conflict event from DB in approve_draft", exc_info=exc)
+
+        cfg = get_settings()
+        account = _resolve_email_account(email)
+        if account.provider == "graph":
+            from src.connectors.graph import graph
+            try:
+                graph.send_message(
+                    to=[resched["recipient"]],
+                    cc=[],
+                    bcc=[],
+                    subject=resched["subject"],
+                    body_html=resched["body"]
+                )
+                resched_sent = True
+                log.info("reschedule_sent_graph", extra={"email_id": email_id, "recipient": resched["recipient"]})
+                _log_activity("rescheduled", f"Sent reschedule request to {resched['recipient']} for '{resched['event_title']}'", email.id)
+            except Exception as exc:
+                log.error("Failed to send reschedule request via Graph", exc_info=exc)
+        else:
+            try:
+                smtp_settings = resolve_smtp_settings(account)
+                smtp_send_email(
+                    host=smtp_settings["host"],
+                    port=smtp_settings["port"],
+                    username=smtp_settings["username"],
+                    password=smtp_settings["password"],
+                    use_ssl=smtp_settings["use_ssl"],
+                    use_tls=smtp_settings["use_tls"],
+                    from_addr=smtp_settings["from_addr"],
+                    from_name=smtp_settings["from_name"],
+                    to_addrs=[resched["recipient"]],
+                    cc_addrs=[],
+                    bcc_addrs=[],
+                    subject=resched["subject"],
+                    body=resched["body"],
+                )
+                resched_sent = True
+                log.info("reschedule_sent_smtp", extra={"email_id": email_id, "recipient": resched["recipient"]})
+                _log_activity("rescheduled", f"Sent reschedule request to {resched['recipient']} for '{resched['event_title']}'", email.id)
+            except Exception as exc:
+                log.error("Failed to send reschedule request via SMTP", exc_info=exc)
     
     email.draft_reply = None
     email.is_read = True
@@ -960,6 +1056,7 @@ async def approve_draft(email_id: str) -> dict[str, Any]:
         "status": "sent",
         "preview": draft_body[:80],
         "sent_email": sent_email.model_dump(mode="json"),
+        "reschedule_sent": resched_sent,
     }
 # ---- Send / Compose Endpoints -----------------------------------------------
 class SendReplyRequest(BaseModel):
@@ -1284,21 +1381,39 @@ async def classify_all(
         if account_id and email.account_id != account_id:
             continue
         if email.classification is None:
-            result, _resolved = await _classify_with_mode(email, _calendar)
+            result, resolved_date = await _classify_with_mode(email, _calendar)
             email.classification = result
+            # ── Auto-create calendar event ───
+            auto_event = classifier.extract_meeting_event(
+                email, result, _calendar, resolved_date=resolved_date,
+            )
+            if auto_event:
+                existing_auto = any(e.id == auto_event.id for e in _calendar)
+                if not existing_auto:
+                    _calendar.append(auto_event)
+                    safe_store_calendar_event(auto_event, source="auto_from_email")
+                    _log_activity(
+                        "auto_event",
+                        f"Calendar event created: {auto_event.title}",
+                        auto_event.id,
+                    )
             safe_record_event(
                 "email.classified",
                 {
                     "classification": result.model_dump(mode="json"),
                     "subject": email.subject,
                     "sender": email.sender,
+                    "auto_event": auto_event.id if auto_event else None,
                 },
                 subject_id=email.id,
             )
-            results.append({
+            entry = {
                 "email_id": email.id,
                 "classification": result.model_dump(mode="json"),
-            })
+            }
+            if auto_event:
+                entry["auto_event"] = auto_event.model_dump(mode="json")
+            results.append(entry)
             _persist_email_state(email)
     if results:
         _log_activity("batch_classified", f"Batch classified {len(results)} emails")
@@ -2123,15 +2238,60 @@ async def list_action_items(
     status: str | None = Query(None, description="Filter by status"),
     email_id: str | None = Query(None, description="Filter by email ID"),
 ) -> list[dict[str, Any]]:
-    """Return action items, optionally filtered."""
+    """Return action items, optionally filtered, enriched with overdue status."""
     from src.services.actions import get_action_items
-    return get_action_items(status=status, email_id=email_id)
+    items = get_action_items(status=status, email_id=email_id)
+
+    now = datetime.now(timezone.utc)
+    priority_order = {"high": 0, "normal": 1, "low": 2}
+
+    for item in items:
+        # Compute overdue status
+        item["is_overdue"] = False
+        item["hours_overdue"] = 0
+        if item.get("due_date") and item.get("status") in ("pending", "in_progress"):
+            try:
+                due = datetime.fromisoformat(item["due_date"])
+                if due.tzinfo is None:
+                    due = due.replace(tzinfo=timezone.utc)
+                if due < now:
+                    item["is_overdue"] = True
+                    item["hours_overdue"] = round((now - due).total_seconds() / 3600)
+            except (ValueError, TypeError):
+                pass
+
+        # Attach source email subject for context
+        eid = item.get("email_id")
+        if eid and eid in _emails:
+            item["source_subject"] = _emails[eid].subject
+        else:
+            item["source_subject"] = None
+
+        # Ensure priority field exists
+        item.setdefault("priority", "normal")
+
+    # Sort: overdue first → high priority → by due date
+    items.sort(key=lambda a: (
+        0 if a.get("is_overdue") else 1,
+        priority_order.get(a.get("priority", "normal"), 1),
+        a.get("due_date") or "9999",
+    ))
+
+    return items
 
 @router.post("/emails/{email_id}/extract-actions")
 async def extract_email_actions(email_id: str) -> list[dict[str, Any]]:
     """Extract action items from an email using AI."""
     email = _get_email(email_id)
-    from src.services.actions import extract_action_items
+    from src.services.actions import extract_action_items, get_action_items
+    # Deduplicate: if action items already exist for this email, return them
+    existing = get_action_items(email_id=email.id)
+    if existing:
+        log.info(
+            "action_items_already_exist",
+            extra={"email_id": email.id, "count": len(existing)},
+        )
+        return existing
     items = await extract_action_items(
         email_id=email.id,
         sender=email.sender,
@@ -2218,34 +2378,406 @@ async def update_sender_profile_endpoint(
 # ---- Daily Digest Endpoint -------------------------------------------------
 
 @router.get("/digest")
-async def daily_digest() -> dict[str, Any]:
-    """Generate an AI-powered daily digest of pending emails and actions."""
+async def daily_digest(
+    days: int = Query(0, ge=0, le=2, description="Lookback: 0=today, 1=yesterday+today, 2=past 3 days"),
+) -> dict[str, Any]:
+    """Return the daily digest — precomputed if available, otherwise generate."""
+    global _cached_digest
     from src.services.digest import generate_daily_digest
 
-    # Build email summaries from in-memory store
+    # Return cached digest if fresh and same lookback window
+    if _cached_digest:
+        try:
+            gen_at = datetime.fromisoformat(
+                _cached_digest.get("generated_at", "")
+            )
+            cached_days = _cached_digest.get("lookback_days", 0)
+            if gen_at.date() == datetime.now(timezone.utc).date() and cached_days == days:
+                return _cached_digest
+        except (ValueError, TypeError):
+            pass
+
+    result = await _generate_digest_internal(lookback_days=days)
+    return result
+
+
+async def _generate_digest_internal(*, lookback_days: int = 0) -> dict[str, Any]:
+    """Build email dicts and generate digest, caching the result."""
+    global _cached_digest
+    from src.services.digest import generate_daily_digest
+    import re as _re
+
+    # ── Build thread classification map for propagation ─────────────────
+    # If email A in thread T is classified but email B in thread T is not,
+    # B inherits A's classification data for the digest.
+    thread_class_map: dict[str, Any] = {}
+    for e in _emails.values():
+        if e.thread_id and e.classification:
+            existing = thread_class_map.get(e.thread_id)
+            # Keep the most recent classification in the thread
+            if not existing or e.timestamp > existing["_ts"]:
+                thread_class_map[e.thread_id] = {
+                    "priority": e.classification.priority.value,
+                    "category": e.classification.category.value,
+                    "reasoning": e.classification.reasoning,
+                    "_ts": e.timestamp,
+                }
+
     email_dicts = []
     for e in _emails.values():
+        body_text = e.body or ""
+        if e.html_body and not body_text:
+            body_text = e.html_body
+        body_preview = _re.sub(r"<[^>]+>", " ", body_text)[:200].strip()
+
+        # Use own classification, or inherit from thread sibling
+        if e.classification:
+            priority = e.classification.priority.value
+            category = e.classification.category.value
+            reasoning = e.classification.reasoning
+        elif e.thread_id and e.thread_id in thread_class_map:
+            tc = thread_class_map[e.thread_id]
+            priority = tc["priority"]
+            category = tc["category"]
+            reasoning = f"[Thread] {tc['reasoning']}"
+        else:
+            priority = "unclassified"
+            category = "unknown"
+            reasoning = ""
+
         email_dicts.append({
+            "id": e.id,
             "subject": e.subject,
             "sender": e.sender,
-            "priority": e.classification.priority.value if e.classification else "unclassified",
-            "category": e.classification.category.value if e.classification else "unknown",
+            "priority": priority,
+            "category": category,
+            "reasoning": reasoning,
             "timestamp": e.timestamp.isoformat(),
+            "is_read": e.is_read,
+            "has_draft": e.draft_reply is not None,
+            "draft_sent": getattr(e, 'draft_approved', False),
+            "body_preview": body_preview,
+            "thread_id": e.thread_id,
         })
 
-    # Get today's calendar events
-    cal_dicts = []
-    from datetime import datetime
-    today = datetime.now().date()
+    # ── Consolidate threads: keep only 1 representative per thread ─────
+    # Priority: classified > unclassified, then newest timestamp.
+    thread_groups: dict[str, list[dict]] = {}
+    standalone = []
+    for ed in email_dicts:
+        tid = ed.get("thread_id")
+        if tid:
+            thread_groups.setdefault(tid, []).append(ed)
+        else:
+            standalone.append(ed)
+
+    consolidated = list(standalone)
+    for tid, group in thread_groups.items():
+        # Sort: classified first, then newest
+        group.sort(key=lambda x: (
+            0 if x["category"] != "unknown" else 1,
+            x["timestamp"],
+        ), reverse=True)
+        best = group[0]
+        # Merge thread context: count siblings, combine previews
+        if len(group) > 1:
+            best["thread_count"] = len(group)
+            # Use the classified email's reasoning; fall back to any
+            for g in group:
+                if g["reasoning"] and not best["reasoning"]:
+                    best["reasoning"] = g["reasoning"]
+                    best["category"] = g["category"]
+                    best["priority"] = g["priority"]
+        consolidated.append(best)
+    email_dicts = consolidated
+
+    # ── Build "already exists" lookup for digest enrichment ─────────────
+    existing_event_emails: set[str] = set()
     for ev in _calendar:
-        if hasattr(ev.start, 'date') and ev.start.date() == today:
-            cal_dicts.append({
-                "title": ev.title,
-                "start": ev.start.strftime("%H:%M"),
-                "end": ev.end.strftime("%H:%M") if ev.end else "",
+        if getattr(ev, "source_email_id", None):
+            existing_event_emails.add(ev.source_email_id)
+    # Check actions
+    from src.services.actions import get_action_items as _get_actions
+    all_actions = _get_actions()
+    existing_action_emails: set[str] = set()
+    for a in all_actions:
+        if a.get("email_id") and a.get("status") in ("pending", "in_progress"):
+            existing_action_emails.add(a["email_id"])
+
+    cal_dicts = []
+    now = datetime.now()
+    window_end = now + timedelta(hours=24)
+    for ev in _calendar:
+        if hasattr(ev.start, 'date'):
+            if now.date() <= ev.start.date() <= window_end.date():
+                time_str = "All day" if ev.is_all_day else ev.start.strftime("%H:%M")
+                cal_dicts.append({
+                    "id": ev.id,
+                    "title": ev.title,
+                    "time": time_str,
+                    "start": ev.start.strftime("%H:%M"),
+                    "end": ev.end.strftime("%H:%M") if ev.end else "",
+                    "is_all_day": ev.is_all_day,
+                })
+
+    cal_dicts.sort(key=lambda x: x.get("start", "99:99"))
+    result = await generate_daily_digest(
+        email_dicts, cal_dicts,
+        lookback_days=lookback_days,
+        existing_event_emails=existing_event_emails,
+        existing_action_emails=existing_action_emails,
+    )
+    _cached_digest = result
+    return result
+
+
+# ---- Digest Config Endpoints -----------------------------------------------
+
+@router.get("/digest/config")
+async def get_digest_config_endpoint() -> dict[str, Any]:
+    """Return the user's digest configuration."""
+    from src.services.digest import get_digest_config
+    config = get_digest_config()
+    return config
+
+
+@router.put("/digest/config")
+async def save_digest_config_endpoint(body: dict[str, Any]) -> dict[str, Any]:
+    """Save the user's digest configuration."""
+    from src.services.digest import save_digest_config, get_digest_config
+    save_digest_config(body)
+    return get_digest_config()
+
+
+@router.post("/digest/generate")
+async def trigger_digest_generation() -> dict[str, Any]:
+    """Manually trigger digest generation pipeline.
+
+    If auto_classify is enabled and AI mode is ai_rich, classify
+    only TODAY's unclassified emails (last 24h) to avoid wasting
+    AI tokens on old emails from a newly added account.
+    """
+    from src.services.digest import get_digest_config
+    config = get_digest_config()
+    cfg = get_settings()
+
+    classified_count = 0
+    skipped_old = 0
+    if config.get("auto_classify") and cfg.ai_mode == "ai_rich":
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=24)
+        print("[DIGEST] Smart-classifying today's unclassified emails...")
+        for email in _emails.values():
+            if email.classification is not None:
+                continue
+            # Only classify emails from the last 24 hours
+            email_ts = email.timestamp
+            if email_ts.tzinfo is None:
+                email_ts = email_ts.replace(tzinfo=timezone.utc)
+            if email_ts < cutoff:
+                skipped_old += 1
+                continue
+            try:
+                result, resolved_date = await _classify_with_mode(email, _calendar)
+                email.classification = result
+                classified_count += 1
+                auto_event = classifier.extract_meeting_event(
+                    email, result, _calendar, resolved_date=resolved_date,
+                )
+                if auto_event:
+                    existing_auto = any(e.id == auto_event.id for e in _calendar)
+                    if not existing_auto:
+                        _calendar.append(auto_event)
+                        safe_store_calendar_event(auto_event, source="auto_from_digest")
+            except Exception:
+                log.exception("digest_auto_classify_failed", extra={"email_id": email.id})
+        print(f"[DIGEST] Classified {classified_count} today's emails, skipped {skipped_old} older")
+
+    result = await _generate_digest_internal(lookback_days=0)
+    result["auto_classified_count"] = classified_count
+    result["skipped_old_emails"] = skipped_old
+    return result
+
+
+@router.post("/digest/card-action")
+async def digest_card_action(body: dict[str, Any]) -> dict[str, Any]:
+    """Handle inline actions from digest email cards.
+
+    Supports:
+    - action_type: "calendar" → creates a calendar event (deduped)
+    - action_type: "action" → creates an action item (deduped)
+    """
+    email_id = body.get("email_id")
+    action_type = body.get("action_type")
+
+    if not email_id or not action_type:
+        raise HTTPException(status_code=400, detail="email_id and action_type required")
+
+    if action_type == "calendar":
+        # ── Deduplicate: check if event already exists for this email ──
+        for ev in _calendar:
+            if getattr(ev, "source_email_id", None) == email_id:
+                return {"status": "already_exists", "event_id": ev.id,
+                        "title": ev.title, "message": "Event already in calendar"}
+
+        title = body.get("title", "Event from digest")
+        date_str = body.get("date")
+        if not date_str:
+            raise HTTPException(status_code=400, detail="date required for calendar action")
+        try:
+            start = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format")
+        end = start + timedelta(hours=1)
+
+        from src.models.email import CalendarEvent
+        event = CalendarEvent(
+            id=f"digest-{email_id[:30]}-{int(datetime.now().timestamp())}",
+            title=title,
+            start=start,
+            end=end,
+            source_email_id=email_id,
+        )
+        _calendar.append(event)
+        safe_store_calendar_event(event, source="digest_card")
+        _log_activity("digest_calendar", f"Event created from digest: {title}", event.id)
+        return {"status": "created", "event_id": event.id, "title": title}
+
+    elif action_type == "action":
+        from src.services.actions import _store_action_item, get_action_items
+        # ── Deduplicate: check if action already exists for this email ──
+        existing = get_action_items(email_id=email_id)
+        if existing:
+            return {"status": "already_exists", "action_id": existing[0]["id"],
+                    "description": existing[0]["description"],
+                    "message": "Action already exists for this email"}
+
+        description = body.get("description", "Action from digest")
+        due_date = body.get("due_date")
+        action_id = str(uuid4())
+        _store_action_item(
+            action_id=action_id,
+            email_id=email_id,
+            thread_id=None,
+            description=description,
+            due_date=due_date,
+            priority=body.get("priority", "normal"),
+        )
+        _log_activity("digest_action", f"Action created from digest: {description}", action_id)
+        return {"status": "created", "action_id": action_id, "description": description}
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown action_type: {action_type}")
+
+
+# ---- Deadlines Endpoint (mobile-friendly) ----------------------------------
+
+@router.get("/deadlines")
+async def get_deadlines(
+    days: int = Query(7, ge=1, le=30, description="Window in days"),
+) -> dict[str, Any]:
+    """Lightweight combined deadline feed for mobile/wearable clients.
+
+    Merges upcoming calendar events, pending action items with due dates,
+    and email-extracted deadline terms into a single sorted feed.
+    Returns at most the next `days` worth of deadlines.
+    """
+    from src.services.actions import get_action_items
+    from src.services.digest import extract_deadline_terms
+    from src.services.calendar import get_upcoming_events
+
+    _ensure_loaded()
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(days=days)
+    items: list[dict[str, Any]] = []
+
+    # 1. Pending action items with due dates
+    pending = get_action_items(status="pending")
+    for a in pending:
+        if not a.get("due_date"):
+            continue
+        try:
+            due = datetime.fromisoformat(a["due_date"])
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=timezone.utc)
+            if due > window_end:
+                continue
+            is_overdue = due < now
+            items.append({
+                "type": "action",
+                "id": a["id"],
+                "title": a["description"],
+                "due": due.isoformat(),
+                "is_overdue": is_overdue,
+                "hours_overdue": round((now - due).total_seconds() / 3600) if is_overdue else 0,
+                "priority": a.get("priority", "normal"),
+                "email_id": a.get("email_id"),
+                "source": "action_item",
+            })
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Upcoming calendar events
+    upcoming = get_upcoming_events(_calendar, now, window_days=days)
+    for ev in upcoming:
+        ev_start = ev.start
+        if ev_start.tzinfo is None:
+            ev_start = ev_start.replace(tzinfo=timezone.utc)
+        items.append({
+            "type": "event",
+            "id": ev.id,
+            "title": ev.title,
+            "due": ev_start.isoformat(),
+            "is_overdue": False,
+            "hours_overdue": 0,
+            "priority": "normal",
+            "email_id": getattr(ev, "source_email_id", None),
+            "source": "calendar",
+            "is_all_day": ev.is_all_day,
+            "location": getattr(ev, "location", ""),
+        })
+
+    # 3. Email-extracted deadlines from today's unread emails
+    for email in _emails.values():
+        if email.is_read:
+            continue
+        email_ts = email.timestamp
+        if email_ts.tzinfo is None:
+            email_ts = email_ts.replace(tzinfo=timezone.utc)
+        if (now - email_ts) > timedelta(hours=48):
+            continue
+        body_preview = (email.body or "")[:300]
+        terms = extract_deadline_terms(body_preview)
+        if terms:
+            items.append({
+                "type": "email_deadline",
+                "id": email.id,
+                "title": email.subject,
+                "due": email_ts.isoformat(),
+                "is_overdue": False,
+                "hours_overdue": 0,
+                "priority": (
+                    email.classification.priority.value
+                    if email.classification else "normal"
+                ),
+                "email_id": email.id,
+                "source": "email",
+                "sender": email.sender,
+                "deadline_terms": terms,
             })
 
-    return await generate_daily_digest(email_dicts, cal_dicts)
+    # Sort: overdue first, then by due date ascending
+    items.sort(key=lambda x: (
+        0 if x.get("is_overdue") else 1,
+        x.get("due", "9999"),
+    ))
+
+    return {
+        "deadlines": items,
+        "count": len(items),
+        "window_days": days,
+        "generated_at": now.isoformat(),
+    }
 
 
 # ---- Meeting Brief Endpoint -----------------------------------------------
