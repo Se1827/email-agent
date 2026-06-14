@@ -101,6 +101,34 @@
   --shadow-glow: 0 0 20px rgba(225, 29, 72, 0.15);
 }
 
+/* ---- Forest Emerald Theme (Greyish-Green / Gruvbox-style) ---- */
+.theme-forest {
+  --bg-primary: #1a1e1c;
+  --bg-secondary: #222825;
+  --bg-tertiary: #2b332f;
+  --bg-surface: #343f3a;
+  --bg-hover: #3d4a44;
+  --bg-selected: #2d453b;
+  --bg-card: rgba(35, 45, 40, 0.85);
+
+  --text-primary: #e8f5ee;
+  --text-secondary: #a8b9b0;
+  --text-muted: #576b61;
+
+  --border: #2e3b35;
+  --border-light: #3e4f48;
+  --border-glow: rgba(16, 185, 129, 0.08);
+
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-soft: rgba(16, 185, 129, 0.1);
+  --accent-glow: rgba(16, 185, 129, 0.2);
+
+  --gradient-accent: linear-gradient(135deg, #10b981, #059669);
+  --shadow-glow: 0 0 20px rgba(16, 185, 129, 0.12);
+}
+
+
 
 /* ---- Reset ---- */
 *,

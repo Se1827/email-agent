@@ -13,7 +13,10 @@ function App() {
 
   useEffect(() => {
     // Apply theme class to body
-    const themeClass = theme === 'crimson' ? 'theme-crimson' : '';
+    let themeClass = '';
+    if (theme === 'crimson') themeClass = 'theme-crimson';
+    else if (theme === 'forest') themeClass = 'theme-forest';
+
     document.body.className = themeClass;
     localStorage.setItem('app-theme', theme);
   }, [theme]);

@@ -627,6 +627,7 @@ function AppearanceTab({ showToast }) {
   const THEMES = [
     { id: 'default', label: 'Azure Blue', color: '#6366f1', bg: '#0f1117' },
     { id: 'crimson', label: 'Crimson Dark', color: '#e11d48', bg: '#000000' },
+    { id: 'forest', label: 'Forest Emerald', color: '#10b981', bg: '#1a1e1c' },
   ];
 
   const applyTheme = (id) => {
