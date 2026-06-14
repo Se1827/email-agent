@@ -39,6 +39,7 @@ const TABS = [
   { id: 'graph', label: 'Microsoft Graph', icon: Link2 },
   { id: 'privacy', label: 'Privacy', icon: Shield },
   { id: 'storage', label: 'Storage & DB', icon: Database },
+  { id: 'appearance', label: 'Appearance', icon: Eye },
 ];
 
 const PII_MODES = [
@@ -94,6 +95,7 @@ function SettingsPage() {
           {tab === 'graph' && <GraphTab showToast={showToast} />}
           {tab === 'privacy' && <PrivacyTab showToast={showToast} />}
           {tab === 'storage' && <StorageTab showToast={showToast} />}
+          {tab === 'appearance' && <AppearanceTab showToast={showToast} />}
         </div>
       </div>
 
@@ -614,6 +616,61 @@ function StorageTab({ showToast }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function AppearanceTab({ showToast }) {
+  const currentTheme = localStorage.getItem('app-theme') || 'default';
+  const [selected, setSelected] = useState(currentTheme);
+
+  const THEMES = [
+    { id: 'default', label: 'Azure Blue', color: '#6366f1', bg: '#0f1117' },
+    { id: 'crimson', label: 'Crimson Dark', color: '#e11d48', bg: '#000000' },
+  ];
+
+  const applyTheme = (id) => {
+    setSelected(id);
+    localStorage.setItem('app-theme', id);
+    // Dispatch event so App.jsx knows
+    window.dispatchEvent(new Event('theme-changed'));
+    showToast(`Theme switched to ${id === 'crimson' ? 'Crimson Dark' : 'Azure Blue'}`);
+  };
+
+  return (
+    <div className="settings-tab-content animate-slide-up">
+      <div className="settings-tab-header">
+        <h2 className="settings-tab-title"><Eye size={20} /> Appearance</h2>
+        <p className="settings-tab-desc">Customize the look and feel of your workspace</p>
+      </div>
+
+      <div className="theme-grid">
+        {THEMES.map(t => (
+          <div
+            key={t.id}
+            className={`theme-card ${selected === t.id ? 'active' : ''}`}
+            onClick={() => applyTheme(t.id)}
+          >
+            <div className="theme-preview" style={{ background: t.bg }}>
+              <div className="theme-preview-accent" style={{ background: t.color }}></div>
+              <div className="theme-preview-sidebar"></div>
+              <div className="theme-preview-content">
+                <div className="theme-preview-line"></div>
+                <div className="theme-preview-line" style={{ width: '60%' }}></div>
+              </div>
+            </div>
+            <div className="theme-card-info">
+              <span className="theme-card-label">{t.label}</span>
+              {selected === t.id && <CheckCircle size={16} className="theme-card-check" />}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="settings-info-box" style={{ marginTop: '32px' }}>
+        <Info size={16} />
+        <p>Appearance settings are saved locally to your browser and persist across refreshes.</p>
+      </div>
     </div>
   );
 }
