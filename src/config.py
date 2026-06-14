@@ -112,3 +112,16 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings.from_env()
     return _settings
+
+
+def reset_settings() -> None:
+    """Invalidate the cached Settings singleton.
+
+    Call this after writing new values to .env so that the next
+    get_settings() call re-reads from the environment.
+    """
+    global _settings
+    _settings = None
+    # Re-load .env so os.getenv() picks up the new values
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
+

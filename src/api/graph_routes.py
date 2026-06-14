@@ -119,7 +119,7 @@ def graph_status() -> dict:
         return {
             "mode": "offline",
             "user_email": USER_EMAIL,
-            "tip": "Microsoft Graph is disconnected. Run `python src/connectors/graph.py --login` to reconnect.",
+            "tip": "Microsoft Graph is disconnected. Use the Settings page to reconnect.",
         }
     except Exception as e:
         return {
@@ -127,6 +127,106 @@ def graph_status() -> dict:
             "user_email": USER_EMAIL,
             "tip": f"Error checking Graph status: {e}",
         }
+
+
+# ── In-browser device-code login ───────────────────────────────────────────────
+
+import threading as _threading
+
+_login_state: dict = {"pending": False, "connected": False, "user_email": "", "error": ""}
+
+
+@router.post("/login")
+def graph_trigger_login() -> dict:
+    """
+    Start the OAuth2 device-code login flow in a background thread.
+    Returns {user_code, verification_uri} immediately so the frontend
+    can display them — no terminal command required.
+    """
+    from src.connectors.graph import IS_MOCK, TENANT_ID, CLIENT_ID, SCOPES
+    import requests as _req
+
+    if IS_MOCK:
+        return {"mode": "mock", "message": "Switch to live mode first (uncheck Mock Mode in Graph settings)."}
+
+    # Kick off device code request synchronously (fast — just one HTTP call)
+    try:
+        resp = _req.post(
+            f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/devicecode",
+            data={"client_id": CLIENT_ID, "scope": " ".join(SCOPES)},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        raise HTTPException(502, f"Could not start device login: {exc}") from exc
+
+    device_code = data["device_code"]
+    user_code = data["user_code"]
+    verification_uri = data.get("verification_uri", "https://microsoft.com/devicelogin")
+    expires_in = data.get("expires_in", 900)
+    interval = data.get("interval", 5)
+
+    # Background thread polls for token
+    _login_state["pending"] = True
+    _login_state["connected"] = False
+    _login_state["error"] = ""
+
+    def _poll():
+        import time as _time
+        from src.connectors.graph import _save_token, USER_EMAIL
+        import src.connectors.graph as _gm
+        deadline = _time.time() + expires_in
+        while _time.time() < deadline:
+            _time.sleep(interval)
+            try:
+                r = _req.post(
+                    f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token",
+                    data={
+                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                        "client_id": CLIENT_ID,
+                        "device_code": device_code,
+                    },
+                    timeout=10,
+                )
+                rd = r.json()
+                if "access_token" in rd:
+                    _save_token(rd)
+                    _login_state["connected"] = True
+                    _login_state["pending"] = False
+                    _login_state["user_email"] = rd.get("id_token", USER_EMAIL)
+                    return
+                err = rd.get("error", "")
+                if err not in ("authorization_pending", "slow_down"):
+                    _login_state["error"] = rd.get("error_description", err)
+                    _login_state["pending"] = False
+                    return
+            except Exception as e:
+                _login_state["error"] = str(e)
+                _login_state["pending"] = False
+                return
+        _login_state["error"] = "Login timed out."
+        _login_state["pending"] = False
+
+    _threading.Thread(target=_poll, daemon=True).start()
+
+    return {
+        "user_code": user_code,
+        "verification_uri": verification_uri,
+        "expires_in": expires_in,
+        "message": f"Go to {verification_uri} and enter code: {user_code}",
+    }
+
+
+@router.get("/login/status")
+def graph_login_status() -> dict:
+    """Poll this to check if device-code login completed."""
+    return {
+        "pending": _login_state["pending"],
+        "connected": _login_state["connected"],
+        "user_email": _login_state["user_email"],
+        "error": _login_state["error"],
+    }
 
 
 # ── Mail endpoints ─────────────────────────────────────────────────────────────
