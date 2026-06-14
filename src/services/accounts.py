@@ -71,7 +71,7 @@ def load_accounts(data_dir: Path) -> list[AccountConfig]:
             # (e.g. compose_email and _load_email_source) don't throw 404s.
             if not any(a.id == "outlook" for a in accounts):
                 import os
-                graph_email = os.getenv("GRAPH_USER_EMAIL", "outlook-user@outlook.com")
+                graph_email = os.getenv("GRAPH_USER_EMAIL", "you@outlook.com")
                 accounts.append(AccountConfig(
                     id="outlook",
                     name="Outlook",
@@ -108,7 +108,7 @@ def _default_account_from_env() -> list[AccountConfig]:
             AccountConfig(
                 id="mock-default",
                 name="Demo Inbox",
-                email="you@company.com",
+                email="you@example.com",
                 provider="mock",
                 color="#3b82f6",
             )
@@ -118,7 +118,7 @@ def _default_account_from_env() -> list[AccountConfig]:
             AccountConfig(
                 id="graph-default",
                 name="Microsoft 365",
-                email=os.getenv("GRAPH_USER_EMAIL", "se1827@outlook.com"),
+                email=os.getenv("GRAPH_USER_EMAIL", "you@outlook.com"),
                 provider="graph",
                 color="#6366f1",
             )
