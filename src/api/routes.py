@@ -368,8 +368,7 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
     emails.extend(sent_emails)
     
     # Start IDLE connection to wait for push notifications
-    # DISABLED: Causing Gmail rate limiting / concurrent connection issues. Frontend polls every 15s anyway.
-    # _ensure_idle_connection(account, inbox)
+    _ensure_idle_connection(account, inbox)
     # Ensure sent emails are marked as is_sent
     from_addr = account.email or cfg.imap_user
     if from_addr:

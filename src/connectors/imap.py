@@ -136,7 +136,7 @@ def sync_mailbox(
     log.info("imap_connect", extra={"host": host, "user": username, "mailbox": mailbox})
     conn = klass(host, port)
     try:
-        conn.login(username, password)
+        conn.login(username, password.replace(" ", ""))
         
         # Capabilities often change after login (e.g. CONDSTORE becomes available)
         conn.capability()
@@ -341,7 +341,7 @@ def idle_loop(
         conn = None
         try:
             conn = klass(host, port)
-            conn.login(username, password)
+            conn.login(username, password.replace(" ", ""))
             conn.select(mailbox, readonly=True)
             conn.sock.settimeout(29 * 60)
             
@@ -378,7 +378,11 @@ def idle_loop(
                         log.error("idle_callback_error", extra={"error": str(e)})
                         
         except Exception as e:
-            log.error("idle_loop_error", extra={"error": str(e), "user": username})
+            err_msg = str(e)
+            log.error("idle_loop_error", extra={"error": err_msg, "user": username})
+            if "AUTHENTICATIONFAILED" in err_msg.upper():
+                log.error("idle_loop_auth_failed", extra={"msg": "Authentication failed permanently, exiting IDLE loop."})
+                break
         finally:
             if conn:
                 try:
