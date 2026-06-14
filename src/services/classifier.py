@@ -25,7 +25,7 @@ from src.llm import client as llm
 from src.llm.date_fast import resolve_fast
 from src.llm.date_resolver import ResolvedDate, resolve_proposed_datetime
 from src.llm.prompts import CLASSIFY_SYSTEM, CLASSIFY_USER
-from src.models.email import CalendarEvent, Classification, Email, Priority
+from src.models.email import CalendarEvent, Category, Classification, Email, Priority
 from src.services.conflicts import (
     check_full_calendar_conflict,
     format_conflict_context,
