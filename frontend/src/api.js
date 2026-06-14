@@ -150,3 +150,28 @@ export function getAttachmentUrl(emailId, filename) {
 export function fetchAttachments(emailId) {
     return request(`/emails/${emailId}/attachments`);
 }
+// ---- App Settings ----
+export function fetchSettings() {
+    return request('/settings');
+}
+export function saveSettings(data) {
+    return request('/settings', { method: 'PUT', body: JSON.stringify(data) });
+}
+// ---- Storage / Docker Setup ----
+export function fetchStorageSetupStatus() {
+    return request('/storage/status');
+}
+export function setupStorage(database_url) {
+    return request('/storage/setup', {
+        method: 'POST',
+        body: JSON.stringify({ database_url }),
+    });
+}
+// ---- Graph Login (device-code, in-browser) ----
+export function triggerGraphLogin() {
+    return request('/graph/login', { method: 'POST' });
+}
+export function fetchGraphLoginStatus() {
+    return request('/graph/login/status');
+}
+
