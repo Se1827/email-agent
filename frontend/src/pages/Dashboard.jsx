@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import {
   fetchDashboard, dismissNotification, fetchDailyDigest,
-  fetchActionItems, updateActionItem
+  fetchActionItems, updateActionItem, request
 } from '../api';
 import './Dashboard.css';
 
@@ -36,7 +36,7 @@ function Dashboard() {
   const [actionsLoading, setActionsLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/graph/status").then(r => r.json()).then(j => setGraphStatus(j)).catch(() => {});
+    request("/graph/status").then(j => setGraphStatus(j)).catch(() => {});
   }, []);
 
   const [loading, setLoading] = useState(true);

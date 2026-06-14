@@ -6,17 +6,11 @@ import {
   WifiOff, MoreHorizontal, Search, X, Loader2, Sparkles,
   Tag, FileText, Zap, CalendarPlus
 } from 'lucide-react';
+import { request } from '../api';
 import './OutlookPage.css';
 
-const API = '/api/graph';
-
 async function gfetch(path, opts = {}) {
-  const res = await fetch(`${API}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
-  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-  return res.json();
+  return request(`/graph${path}`, opts);
 }
 
 const TABS = [

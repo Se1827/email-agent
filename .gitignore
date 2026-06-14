@@ -19,6 +19,7 @@ env/
 # Environment / secrets
 .env
 data/accounts.json
+data/
 
 # IDE
 .vscode/

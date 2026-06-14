@@ -14,13 +14,13 @@ Zero LLM calls. Pure regex + pattern matching.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from src.auth import read_json_file
 from src.models.email import Category, Email, Priority
 
 log = logging.getLogger(__name__)
@@ -68,8 +68,7 @@ def _load_rules(data_dir: Path) -> RulesConfig:
         if _cached_config is not None and mtime == _cached_mtime:
             return _cached_config
 
-        with open(rules_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = read_json_file(rules_path, default={})
 
         spam = data.get("spam_patterns", {})
         config = RulesConfig(

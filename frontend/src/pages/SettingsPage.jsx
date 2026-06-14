@@ -13,7 +13,7 @@ import {
   fetchStorageSetupStatus, setupStorage,
   triggerGraphLogin, fetchGraphLoginStatus,
   fetchAIMode, updateAIMode,
-  fetchPreferences, createPreference, deletePreference,
+  fetchPreferences, createPreference, deletePreference, request
 } from '../api';
 import './SettingsPage.css';
 
@@ -417,7 +417,7 @@ function GraphTab({ showToast }) {
   const loadAll = async () => {
     const [cfg, st] = await Promise.all([
       fetchGraphConfig().catch(() => null),
-      fetch('/api/graph/status').then(r => r.json()).catch(() => null),
+      request('/graph/status').catch(() => null),
     ]);
     setConfig(cfg); setStatus(st);
   };

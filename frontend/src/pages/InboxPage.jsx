@@ -4,7 +4,7 @@ import InboxNavbar from '../components/InboxNavbar';
 import EmailList from '../components/EmailList';
 import EmailDetail from '../components/EmailDetail';
 import ComposeModal from '../components/ComposeModal';
-import { fetchAccounts, fetchEmails, classifyAll, refreshInbox } from '../api';
+import { fetchAccounts, fetchEmails, classifyAll, refreshInbox, request } from '../api';
 import './InboxPage.css';
 
 /* ── Outlook / Microsoft Graph helpers ─────────────────────────── */
@@ -18,12 +18,9 @@ const OUTLOOK_ACCOUNT = {
 };
 
 async function fetchGraphEmails() {
-  const res = await fetch('/api/graph/mail/inbox?top=50', {
-    headers: { 'Content-Type': 'application/json' },
-  });
   let graphMessages = [];
-  if (res.ok) {
-    const data = await res.json();
+  try {
+    const data = await request('/graph/mail/inbox?top=50');
     // Prefix IDs so they don't collide with regular emails
     graphMessages = (data.messages || []).map((m) => ({
       ...m,
@@ -31,20 +28,17 @@ async function fetchGraphEmails() {
       account_id: 'outlook',
       thread_id: m.thread_id ? (m.thread_id.startsWith('outlook:') ? m.thread_id : `outlook:${m.thread_id}`) : undefined,
     }));
+  } catch (e) {
+    console.error('Failed to fetch graph emails:', e);
   }
 
   // Fetch locally cached outlook emails (which includes composed Sent items)
   try {
-    const localRes = await fetch('/api/emails?account_id=outlook', {
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (localRes.ok) {
-      const localData = await localRes.json();
-      const existingIds = new Set(graphMessages.map(m => m.id));
-      for (const msg of localData) {
-        if (!existingIds.has(msg.id)) {
-          graphMessages.push(msg);
-        }
+    const localData = await request('/emails?account_id=outlook');
+    const existingIds = new Set(graphMessages.map(m => m.id));
+    for (const msg of localData) {
+      if (!existingIds.has(msg.id)) {
+        graphMessages.push(msg);
       }
     }
   } catch (e) {

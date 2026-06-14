@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src.auth import read_json_file
 from src.models.email import CalendarEvent
 
 
 def load_events(data_file: Path) -> list[CalendarEvent]:
-    """Read calendar events from a JSON file."""
-    with open(data_file, encoding="utf-8") as f:
-        raw = json.load(f)
+    """Read calendar events from a JSON file (decrypted if encrypted)."""
+    if not data_file.exists():
+        return []
+    raw = read_json_file(data_file, default=[])
+    if not raw:
+        return []
     events = []
     for entry in raw:
         if not entry.get("id"):

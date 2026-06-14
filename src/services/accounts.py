@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src.auth import read_json_file, write_json_file
 from src.models.email import AccountConfig
 from src.services.inbox_identity import canonicalize_inbox
 
@@ -59,14 +59,13 @@ def load_accounts(data_dir: Path) -> list[AccountConfig]:
 
     if accounts_file.exists():
         try:
-            with open(accounts_file, encoding="utf-8") as f:
-                raw = json.load(f)
+            raw = read_json_file(accounts_file, default=[])
             accounts = []
             for entry in raw:
                 if not entry.get("id"):
                     entry["id"] = _stable_account_id(entry.get("email", ""))
                 accounts.append(AccountConfig.model_validate(entry))
-            
+
             # Inject Virtual Outlook Account if missing, so the backend route handlers
             # (e.g. compose_email and _load_email_source) don't throw 404s.
             if not any(a.id == "outlook" for a in accounts):
@@ -90,13 +89,11 @@ def load_accounts(data_dir: Path) -> list[AccountConfig]:
 
 
 def save_accounts(data_dir: Path, accounts: list[AccountConfig]) -> None:
-    """Persist account configs to accounts.json."""
+    """Persist account configs to accounts.json (encrypted when auth is set up)."""
     accounts_file = data_dir / "accounts.json"
     accounts_file.parent.mkdir(parents=True, exist_ok=True)
     payload = [account.model_dump(mode="json") for account in accounts]
-    with open(accounts_file, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=4)
-        f.write("\n")
+    write_json_file(accounts_file, payload)
 
 
 def _default_account_from_env() -> list[AccountConfig]:

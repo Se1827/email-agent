@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Inbox, Calendar, Settings, Mail } from 'lucide-react';
+import { LayoutDashboard, Inbox, Calendar, Settings, Mail, LogOut } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import './AppNav.css';
 
 const NAV_ITEMS = [
@@ -12,6 +13,7 @@ const NAV_ITEMS = [
 
 function AppNav() {
   const location = useLocation();
+  const { displayName, logout } = useAuth();
 
   return (
     <nav className="app-nav" id="app-nav">
@@ -46,7 +48,23 @@ function AppNav() {
       </div>
 
       <div className="nav-footer">
-        <div className="nav-footer-badge">
+        {/* User identity pill */}
+        {displayName && (
+          <div className="nav-user">
+            <div className="nav-user-avatar">{displayName[0].toUpperCase()}</div>
+            <span className="nav-user-name">{displayName}</span>
+            <button
+              className="nav-logout-btn"
+              onClick={logout}
+              title="Sign out"
+              id="nav-logout"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="nav-footer-badge" style={{ marginTop: displayName ? 8 : 0 }}>
           <span className="nav-footer-dot" />
           <span className="nav-footer-text">Se1827 Submission</span>
         </div>

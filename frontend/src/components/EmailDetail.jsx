@@ -7,7 +7,7 @@ import {
 import {
   classifyEmail, draftReply, approveDraft, fetchEmail,
   markAsRead, fetchThread, sendReply, getAttachmentUrl,
-  extractActionItems, updateActionItem
+  extractActionItems, updateActionItem, request
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
 import './EmailDetail.css';
@@ -444,13 +444,10 @@ function EmailDetail({ email, onUpdate, onReload }) {
         setBusy('classify');
         try {
             if (isOutlook) {
-                const res = await fetch('/api/graph/mail/classify', {
+                const result = await request('/graph/mail/classify', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message_id: graphId }),
                 });
-                if (!res.ok) throw new Error(await res.text());
-                const result = await res.json();
                 // Apply classification to the local email object
                 onUpdate({ ...email, classification: result.classification || result });
             } else {
@@ -469,13 +466,10 @@ function EmailDetail({ email, onUpdate, onReload }) {
         setBusy('draft');
         try {
             if (isOutlook) {
-                const res = await fetch('/api/graph/mail/draft-reply', {
+                const result = await request('/graph/mail/draft-reply', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message_id: graphId, quality: draftQuality }),
                 });
-                if (!res.ok) throw new Error(await res.text());
-                const result = await res.json();
                 const draftBody = result.draft_reply?.body || result.body || result.draft || '';
                 onUpdate({ ...email, draft_reply: result.draft_reply || { body: draftBody, quality: draftQuality } });
                 setEditedDraft(null);
