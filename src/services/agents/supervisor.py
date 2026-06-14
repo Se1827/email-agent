@@ -90,9 +90,10 @@ async def run_supervisor(email: Email) -> AgentPlan:
 
 
 def _default_steps() -> list[AgentStep]:
-    """The full pipeline: calendar → classification → draft."""
+    """The full pipeline: calendar → thread → classification → draft."""
     return [
         AgentStep(agent=AgentType.CALENDAR, reason="Default: check calendar availability"),
+        AgentStep(agent=AgentType.THREAD, reason="Default: summarize thread history"),
         AgentStep(agent=AgentType.CLASSIFICATION, reason="Default: classify email"),
         AgentStep(agent=AgentType.DRAFT, reason="Default: generate draft reply"),
     ]

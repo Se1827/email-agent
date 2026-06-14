@@ -18,7 +18,9 @@ from src.services.conflicts import ConflictResult, TimeSlot
 
 class AgentType(str, Enum):
     """The specialist agents available in AI-Rich mode."""
+    MEMORY = "memory"
     CALENDAR = "calendar"
+    THREAD = "thread"
     CLASSIFICATION = "classification"
     DRAFT = "draft"
 
@@ -54,6 +56,17 @@ class CalendarFindings:
 
 
 @dataclass
+class MemoryFindings:
+    """Output from the memory agent."""
+    sender_profile: Any = None  # SenderProfile or None
+    user_preferences: list[str] = field(default_factory=list)
+    similar_emails: list[dict[str, Any]] = field(default_factory=list)
+    thread_summary: str = ""
+    thread_unresolved: list[str] = field(default_factory=list)
+    whose_move: str = "unclear"
+
+
+@dataclass
 class SharedAgentContext:
     """The accumulator passed between agents in AI-Rich mode.
 
@@ -64,6 +77,9 @@ class SharedAgentContext:
     email: Email
     calendar_events: list[CalendarEvent] = field(default_factory=list)
     plan: AgentPlan | None = None
+
+    # ── Memory agent output ────────────────────────────────────────────
+    memory: MemoryFindings | None = None
 
     # ── Calendar agent output ──────────────────────────────────────────
     calendar: CalendarFindings = field(default_factory=CalendarFindings)

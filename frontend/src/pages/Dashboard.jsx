@@ -4,9 +4,13 @@ import {
   Mail, MailWarning, CheckCircle2, Star,
   AlertTriangle, Bell, Clock, CalendarDays,
   ArrowRight, Sparkles, Link2, ShieldCheck,
-  TrendingUp, Zap, X
+  TrendingUp, Zap, X, ListChecks, CheckCircle, XCircle,
+  Brain, Sunrise, MessageSquare, Target
 } from 'lucide-react';
-import { fetchDashboard, dismissNotification } from '../api';
+import {
+  fetchDashboard, dismissNotification, fetchDailyDigest,
+  fetchActionItems, updateActionItem
+} from '../api';
 import './Dashboard.css';
 
 const PRIORITY_COLORS = {
@@ -26,6 +30,10 @@ function Dashboard() {
   const [data, setData] = useState(null);
   const [graphStatus, setGraphStatus] = useState(null);
   const [graphLoading, setGraphLoading] = useState(false);
+  const [digest, setDigest] = useState(null);
+  const [digestLoading, setDigestLoading] = useState(false);
+  const [actionItems, setActionItems] = useState([]);
+  const [actionsLoading, setActionsLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/graph/status").then(r => r.json()).then(j => setGraphStatus(j)).catch(() => {});
@@ -37,13 +45,14 @@ function Dashboard() {
 
   useEffect(() => {
     loadDashboard();
+    loadActionItems();
     
-    // Auto-fetch polling every 5 seconds (backend serves from instant memory)
+    // Background polling every 30s (light dashboard stats only, not LLM calls)
     const interval = setInterval(() => {
       fetchDashboard()
         .then(d => setData(d))
         .catch(err => console.error('Auto-fetch failed:', err));
-    }, 5000);
+    }, 30000);
     
     return () => clearInterval(interval);
   }, []);
@@ -57,6 +66,37 @@ function Dashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadDigest = async () => {
+    setDigestLoading(true);
+    try {
+      const d = await fetchDailyDigest();
+      setDigest(d);
+    } catch (err) {
+      console.error('Digest load failed:', err);
+    } finally {
+      setDigestLoading(false);
+    }
+  };
+
+  const loadActionItems = async () => {
+    setActionsLoading(true);
+    try {
+      const items = await fetchActionItems('pending');
+      setActionItems(items);
+    } catch (err) {
+      console.error('Actions load failed:', err);
+    } finally {
+      setActionsLoading(false);
+    }
+  };
+
+  const handleActionUpdate = async (id, status) => {
+    try {
+      await updateActionItem(id, status);
+      setActionItems(prev => prev.map(a => a.id === id ? {...a, status} : a));
+    } catch (err) { console.error('Action update failed:', err); }
   };
 
   const handleDismiss = async (id) => {
@@ -137,6 +177,82 @@ function Dashboard() {
       <div className="dashboard-body">
         {/* ---- Left Column ---- */}
         <div className="dashboard-col-main">
+          {/* ---- AI Daily Digest ---- */}
+          <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.05s'}}>
+            <div className="section-heading-row">
+              <h2 className="section-heading"><Sunrise size={13} /> Daily Brief</h2>
+              <button className="btn-link" onClick={loadDigest} disabled={digestLoading}>
+                {digestLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+            {digest ? (
+              <div className="digest-card glass-card">
+                <div className="digest-greeting">
+                  <Brain size={16} className="digest-brain-icon" />
+                  <span>{digest.greeting}</span>
+                </div>
+                {digest.one_line && (
+                  <div className="digest-oneliner">{digest.one_line}</div>
+                )}
+                {digest.priority_emails?.length > 0 && (
+                  <div className="digest-section">
+                    <h4 className="digest-section-title"><Target size={12} /> Priority Emails</h4>
+                    {digest.priority_emails.map((pe, i) => (
+                      <div key={i} className="digest-email-row" onClick={() => navigate('/inbox')}>
+                        <span className={`digest-priority-dot priority-${pe.priority}`} />
+                        <div className="digest-email-info">
+                          <span className="digest-email-subject">{pe.subject}</span>
+                          <span className="digest-email-why">{pe.why}</span>
+                        </div>
+                        <span className="digest-email-sender">{pe.sender?.split('@')[0]}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {digest.themes?.length > 0 && (
+                  <div className="digest-section">
+                    <h4 className="digest-section-title"><MessageSquare size={12} /> Themes</h4>
+                    <div className="digest-themes">
+                      {digest.themes.map((t, i) => (
+                        <div key={i} className="digest-theme-chip">
+                          <span className="digest-theme-name">{t.theme}</span>
+                          <span className="digest-theme-count">{t.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {digest.nudges?.length > 0 && (
+                  <div className="digest-section">
+                    <h4 className="digest-section-title"><AlertTriangle size={12} /> Nudges</h4>
+                    {digest.nudges.map((n, i) => (
+                      <div key={i} className="digest-nudge">
+                        <Zap size={11} />
+                        <span>{n}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {digest.calendar_today?.length > 0 && (
+                  <div className="digest-section">
+                    <h4 className="digest-section-title"><CalendarDays size={12} /> Today's Schedule</h4>
+                    {digest.calendar_today.map((c, i) => (
+                      <div key={i} className="digest-cal-item">
+                        <Clock size={11} />
+                        <span>{c}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="digest-card glass-card digest-empty">
+                <Brain size={24} />
+                <p>{digestLoading ? 'Generating your daily brief...' : 'Click Refresh to generate your AI daily brief'}</p>
+              </div>
+            )}
+          </section>
+
           {/* Notifications */}
           {data.notifications.length > 0 && (
             <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.1s'}}>
@@ -254,6 +370,47 @@ function Dashboard() {
             </div>
           </section>
 
+          {/* ---- Pending Action Items Feed ---- */}
+          <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.15s'}}>
+            <div className="section-heading-row">
+              <h2 className="section-heading"><ListChecks size={13} /> Action Items</h2>
+              <span className="section-badge">{actionItems.filter(a => a.status === 'pending').length} pending</span>
+            </div>
+            <div className="action-feed glass-card">
+              {actionsLoading ? (
+                <div className="action-feed-loading">Loading action items...</div>
+              ) : actionItems.filter(a => a.status === 'pending').length === 0 ? (
+                <div className="action-feed-empty">
+                  <CheckCircle2 size={20} />
+                  <p>No pending action items — you're all caught up!</p>
+                </div>
+              ) : (
+                actionItems.filter(a => a.status === 'pending').slice(0, 8).map(item => (
+                  <div key={item.id} className="action-feed-item">
+                    <div className="action-feed-item-content">
+                      <span className="action-feed-desc">{item.description}</span>
+                      {item.due_date && (
+                        <span className="action-feed-due">
+                          <Clock size={10} /> {new Date(item.due_date).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="action-feed-btns">
+                      <button className="action-feed-btn done" title="Complete"
+                        onClick={() => handleActionUpdate(item.id, 'completed')}>
+                        <CheckCircle size={14} />
+                      </button>
+                      <button className="action-feed-btn dismiss" title="Dismiss"
+                        onClick={() => handleActionUpdate(item.id, 'dismissed')}>
+                        <XCircle size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
           {/* Microsoft Graph Integration */}
           <section className="dashboard-section animate-slide-up" style={{animationDelay: '0.2s'}}>
             <div className="integration-card glass-card">
@@ -266,7 +423,7 @@ function Dashboard() {
                   {graphStatus && (
                     <span className="integration-badge" style={{
                       background: graphStatus.mode === "live" ? "#22c55e22" : (graphStatus.mode === "offline" || graphStatus.mode === "error" ? "rgba(244, 63, 94, 0.1)" : "#f9731622"), 
-                      color: graphStatus.mode === "live" ? "#22c55e" : (graphStatus.mode === "offline" || graphStatus.mode === "error" ? "#f43f5e" : "#f97316")
+                      color: graphStatus.mode === "live" ? "#22c55e" : (graphStatus.mode === "offline" ? "Disconnected" : (graphStatus.mode === "error" ? "Error" : "Mock Mode"))
                     }}>
                       {graphStatus.mode === "live" ? "Live" : (graphStatus.mode === "offline" ? "Disconnected" : (graphStatus.mode === "error" ? "Error" : "Mock Mode"))}
                     </span>

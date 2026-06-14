@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import {
   Settings, Shield, Database, Activity, Link2,
   Server, Eye, Lock, Wifi, WifiOff, ExternalLink,
-  Plus, Save, Trash2, X, Pencil, Zap, Brain
+  Plus, Save, Trash2, X, Pencil, Zap, Brain,
+  ListChecks, Sparkles
 } from 'lucide-react';
 import {
   createAccount,
@@ -14,6 +15,9 @@ import {
   updateGraphConfig,
   fetchAIMode,
   updateAIMode,
+  fetchPreferences,
+  createPreference,
+  deletePreference,
 } from '../api';
 import './SettingsPage.css';
 
@@ -63,6 +67,11 @@ function SettingsPage() {
   const [aiModeOptions, setAiModeOptions] = useState([]);
   const [switchingMode, setSwitchingMode] = useState(false);
 
+  // Preferences state
+  const [preferences, setPreferences] = useState([]);
+  const [newPref, setNewPref] = useState({ pref_type: 'scheduling', pref_key: '', pref_value: '' });
+  const [showAddPref, setShowAddPref] = useState(false);
+
   const loadSettings = () => {
     setLoading(true);
     return Promise.all([
@@ -70,7 +79,8 @@ function SettingsPage() {
       fetchStorageStats().catch(() => null),
       fetchGraphConfig().catch(() => null),
       fetchAIMode().catch(() => null),
-    ]).then(([acc, stor, graph, aiModeData]) => {
+      fetchPreferences().catch(() => []),
+    ]).then(([acc, stor, graph, aiModeData, prefs]) => {
       setAccounts(acc);
       setStorage(stor);
       if (graph) {
@@ -81,6 +91,7 @@ function SettingsPage() {
         setAiMode(aiModeData.ai_mode);
         setAiModeOptions(aiModeData.options || []);
       }
+      setPreferences(Array.isArray(prefs) ? prefs : []);
       setLoading(false);
     });
   };
@@ -381,6 +392,66 @@ function SettingsPage() {
             ))}
             {aiModeOptions.length === 0 && !loading && (
               <div className="settings-empty">AI mode configuration unavailable.</div>
+            )}
+          </div>
+        </section>
+
+        {/* User Preferences */}
+        <section className="settings-card glass-card animate-slide-up" style={{animationDelay: '0.035s'}}>
+          <div className="settings-card-header">
+            <ListChecks size={18} />
+            <h2>Your Preferences</h2>
+            <button className="btn btn-secondary settings-card-action" onClick={() => setShowAddPref(!showAddPref)}>
+              <Plus size={14} /> Add
+            </button>
+          </div>
+          <p className="settings-card-desc">
+            Set personal rules for how the AI processes your emails. These are used by the Memory Agent to personalize classification, drafting, and scheduling.
+          </p>
+          {showAddPref && (
+            <form className="pref-add-form" onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await createPreference(newPref.pref_type, newPref.pref_key || newPref.pref_type, newPref.pref_value);
+                setNewPref({ pref_type: 'scheduling', pref_key: '', pref_value: '' });
+                setShowAddPref(false);
+                const prefs = await fetchPreferences();
+                setPreferences(Array.isArray(prefs) ? prefs : []);
+              } catch (err) { alert(err.message); }
+            }}>
+              <div className="pref-form-row">
+                <select className="select" value={newPref.pref_type} onChange={e => setNewPref(p => ({...p, pref_type: e.target.value}))}>
+                  <option value="scheduling">Scheduling</option>
+                  <option value="drafting">Drafting</option>
+                  <option value="vip">VIP Rules</option>
+                  <option value="general">General</option>
+                </select>
+                <input className="input" placeholder="Rule (e.g., No meetings before 10am)" value={newPref.pref_value}
+                  onChange={e => setNewPref(p => ({...p, pref_value: e.target.value}))} required style={{flex: 1}} />
+                <button type="submit" className="btn btn-primary" style={{whiteSpace: 'nowrap'}}><Save size={14} /> Save</button>
+                <button type="button" className="btn-icon" onClick={() => setShowAddPref(false)}><X size={14} /></button>
+              </div>
+            </form>
+          )}
+          <div className="pref-list">
+            {preferences.length === 0 ? (
+              <div className="settings-empty">No preferences set yet. Add your first one above!</div>
+            ) : (
+              preferences.map(p => (
+                <div key={p.id} className="pref-item">
+                  <span className={`pref-type-badge pref-type-${p.pref_type}`}>{p.pref_type}</span>
+                  <span className="pref-value">{p.pref_value}</span>
+                  <button className="btn-icon danger" title="Delete"
+                    onClick={async () => {
+                      try {
+                        await deletePreference(p.id);
+                        setPreferences(prev => prev.filter(x => x.id !== p.id));
+                      } catch (err) { alert(err.message); }
+                    }}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))
             )}
           </div>
         </section>

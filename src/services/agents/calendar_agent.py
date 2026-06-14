@@ -13,7 +13,7 @@ from datetime import datetime
 
 from src.llm.date_resolver import resolve_proposed_datetime
 from src.services.agents.context import CalendarFindings, SharedAgentContext
-from src.services.classifier import _strip_quoted_text, filter_relevant_events
+from src.services.email_utils import strip_quoted_text, filter_relevant_events
 from src.services.conflicts import find_conflicts, find_free_slots, wall_clock
 
 log = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ async def run_calendar_agent(ctx: SharedAgentContext) -> None:
     4. Write findings to ctx.calendar
     """
     email = ctx.email
-    clean_body = _strip_quoted_text(email.body)
+    clean_body = strip_quoted_text(email.body)
 
     # ── Step 1: Resolve proposed date via LLM ──────────────────────────
     resolved = await resolve_proposed_datetime(

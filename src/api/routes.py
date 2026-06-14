@@ -607,12 +607,19 @@ def _store_thread_state(email: Email) -> None:
 def _store_email_memory(email: Email) -> None:
     compact_body = " ".join(email.body.split())[:500]
     summary = PrivacyGateway().mask_text(compact_body).text
+    # Generate embedding for semantic search (gracefully returns None if unavailable)
+    try:
+        from src.services.search import generate_embedding
+        embedding = generate_embedding(f"{email.subject} {compact_body}")
+    except Exception:
+        embedding = None
     safe_store_semantic_memory(
         memory_type="email_summary",
         subject_id=email.id,
         email_id=email.id,
         thread_id=email.thread_id or email.id,
         summary=summary,
+        embedding=embedding,
         metadata={
             "subject_chars": len(email.subject),
             "has_classification": email.classification is not None,
@@ -805,6 +812,15 @@ async def classify_email(
         f"Email from {email.sender.split('@')[0]} classified as {result.priority.value.upper()}",
         email.id,
     )
+    # Auto-update sender profile with classification data
+    try:
+        from src.services.memory import update_profile_from_classification
+        sender_name = email.sender.split("@")[0].replace(".", " ").title()
+        update_profile_from_classification(
+            email.sender, result.priority.value, display_name=sender_name,
+        )
+    except Exception:
+        pass  # Non-critical — don't block classification
     _persist_email_state(email)
     response = result.model_dump(mode="json")
     if auto_event:
@@ -1743,3 +1759,205 @@ async def wipe_all_storage() -> dict[str, Any]:
         email.classification = None
         email.draft_reply = None
     return {"status": "deleted", "deleted": deleted}
+
+
+# ---- Preferences Endpoints -------------------------------------------------
+
+class PreferenceRequest(BaseModel):
+    pref_type: str  # scheduling_constraint, drafting_instruction, general
+    pref_key: str
+    pref_value: str
+
+@router.get("/preferences")
+async def list_preferences(
+    pref_type: str | None = Query(None, description="Filter by preference type"),
+) -> list[dict[str, Any]]:
+    """Return all active user preferences."""
+    from src.services.memory import get_preferences
+    prefs = get_preferences(pref_type)
+    return [
+        {
+            "id": p.id,
+            "pref_type": p.pref_type,
+            "pref_key": p.pref_key,
+            "pref_value": p.pref_value,
+            "is_active": p.is_active,
+        }
+        for p in prefs
+    ]
+
+@router.post("/preferences")
+async def create_preference(body: PreferenceRequest) -> dict[str, Any]:
+    """Create or update a user preference."""
+    from src.services.memory import store_preference
+    pref_id = store_preference(body.pref_type, body.pref_key, body.pref_value)
+    _log_activity("preference_set", f"Set {body.pref_type}: {body.pref_key}")
+    return {"id": pref_id, "status": "created"}
+
+@router.delete("/preferences/{pref_id}")
+async def remove_preference(pref_id: str) -> dict[str, Any]:
+    """Soft-delete a user preference."""
+    from src.services.memory import delete_preference
+    deleted = delete_preference(pref_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Preference not found")
+    return {"status": "deleted", "id": pref_id}
+
+
+# ---- Action Items Endpoints ------------------------------------------------
+
+class ActionItemUpdateRequest(BaseModel):
+    status: str  # pending, in_progress, completed, dismissed
+
+@router.get("/actions")
+async def list_action_items(
+    status: str | None = Query(None, description="Filter by status"),
+    email_id: str | None = Query(None, description="Filter by email ID"),
+) -> list[dict[str, Any]]:
+    """Return action items, optionally filtered."""
+    from src.services.actions import get_action_items
+    return get_action_items(status=status, email_id=email_id)
+
+@router.post("/emails/{email_id}/extract-actions")
+async def extract_email_actions(email_id: str) -> list[dict[str, Any]]:
+    """Extract action items from an email using AI."""
+    email = _get_email(email_id)
+    from src.services.actions import extract_action_items
+    items = await extract_action_items(
+        email_id=email.id,
+        sender=email.sender,
+        subject=email.subject,
+        body=email.body,
+        timestamp=email.timestamp.isoformat(),
+        thread_id=email.thread_id,
+    )
+    if items:
+        _log_activity(
+            "actions_extracted",
+            f"{len(items)} action item(s) from '{email.subject[:40]}'",
+            email.id,
+        )
+    return items
+
+@router.patch("/actions/{action_id}")
+async def update_action(action_id: str, body: ActionItemUpdateRequest) -> dict[str, Any]:
+    """Update an action item's status."""
+    from src.services.actions import update_action_item
+    updated = update_action_item(action_id, body.status)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Action item not found")
+    _log_activity("action_updated", f"Action {action_id[:8]} → {body.status}")
+    return {"status": "updated", "id": action_id, "new_status": body.status}
+
+
+# ---- Semantic Search Endpoints ---------------------------------------------
+
+class SearchRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+@router.post("/search")
+async def semantic_search(body: SearchRequest) -> list[dict[str, Any]]:
+    """Search emails semantically using embeddings."""
+    from src.services.search import search_similar_emails
+    return search_similar_emails(body.query, limit=body.limit)
+
+
+# ---- Sender Profile Endpoints ----------------------------------------------
+
+@router.get("/sender-profiles/{email_address}")
+async def get_sender_profile_endpoint(email_address: str) -> dict[str, Any]:
+    """Retrieve a sender's profile."""
+    from src.services.memory import get_sender_profile
+    profile = get_sender_profile(email_address)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Sender profile not found")
+    return {
+        "email_address": profile.email_address,
+        "display_name": profile.display_name,
+        "relationship": profile.relationship,
+        "tone_preference": profile.tone_preference,
+        "avg_priority": profile.avg_priority,
+        "interaction_count": profile.interaction_count,
+        "last_interaction": profile.last_interaction.isoformat() if profile.last_interaction else None,
+        "is_vip": profile.is_vip,
+        "metadata": profile.metadata,
+    }
+
+class SenderProfileUpdateRequest(BaseModel):
+    is_vip: bool | None = None
+    relationship: str | None = None
+    tone_preference: str | None = None
+
+@router.patch("/sender-profiles/{email_address}")
+async def update_sender_profile_endpoint(
+    email_address: str,
+    body: SenderProfileUpdateRequest,
+) -> dict[str, Any]:
+    """Update a sender's profile (e.g., mark as VIP)."""
+    from src.services.memory import upsert_sender_profile
+    upsert_sender_profile(
+        email_address,
+        is_vip=body.is_vip,
+        relationship=body.relationship,
+        tone_preference=body.tone_preference,
+    )
+    _log_activity("sender_profile_updated", f"Updated profile for {email_address}")
+    return {"status": "updated", "email_address": email_address}
+
+
+# ---- Daily Digest Endpoint -------------------------------------------------
+
+@router.get("/digest")
+async def daily_digest() -> dict[str, Any]:
+    """Generate an AI-powered daily digest of pending emails and actions."""
+    from src.services.digest import generate_daily_digest
+
+    # Build email summaries from in-memory store
+    email_dicts = []
+    for e in _emails.values():
+        email_dicts.append({
+            "subject": e.subject,
+            "sender": e.sender,
+            "priority": e.classification.priority.value if e.classification else "unclassified",
+            "category": e.classification.category.value if e.classification else "unknown",
+            "timestamp": e.timestamp.isoformat(),
+        })
+
+    # Get today's calendar events
+    cal_dicts = []
+    from datetime import datetime
+    today = datetime.now().date()
+    for ev in _calendar:
+        if hasattr(ev.start, 'date') and ev.start.date() == today:
+            cal_dicts.append({
+                "title": ev.title,
+                "start": ev.start.strftime("%H:%M"),
+                "end": ev.end.strftime("%H:%M") if ev.end else "",
+            })
+
+    return await generate_daily_digest(email_dicts, cal_dicts)
+
+
+# ---- Meeting Brief Endpoint -----------------------------------------------
+
+@router.get("/calendar/events/{event_id}/brief")
+async def meeting_brief(event_id: str) -> dict[str, Any]:
+    """Generate a pre-meeting brief for a calendar event."""
+    from src.services.briefing import generate_meeting_brief
+
+    # Find the event
+    event = None
+    for ev in _calendar:
+        if ev.id == event_id:
+            event = ev
+            break
+    if event is None:
+        raise HTTPException(status_code=404, detail="Calendar event not found")
+
+    return await generate_meeting_brief(
+        event_title=event.title,
+        event_description=event.description,
+        attendees=event.attendees,
+        start_time=event.start.strftime("%H:%M") if event.start else None,
+    )

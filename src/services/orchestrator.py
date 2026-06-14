@@ -17,6 +17,8 @@ from src.llm.date_resolver import ResolvedDate
 from src.models.email import CalendarEvent, Classification, DraftReply, Email
 from src.services.agents.context import AgentType, SharedAgentContext
 from src.services.agents.supervisor import run_supervisor
+from src.services.agents.memory_agent import run_memory_agent
+from src.services.agents.thread_agent import run_thread_agent
 from src.services.agents.calendar_agent import run_calendar_agent
 from src.services.agents.classification_agent import run_classification_agent
 from src.services.agents.draft_agent import run_draft_agent
@@ -39,6 +41,12 @@ async def orchestrate_classify(
             calendar_events=calendar_events or [],
         )
 
+        # ── Step 0: Memory agent (always runs first, zero LLM calls) ──
+        try:
+            await run_memory_agent(ctx)
+        except Exception as exc:
+            ctx.record_error("memory_agent", str(exc))
+
         # ── Step 1: Supervisor triage ──────────────────────────────────
         plan = await run_supervisor(email)
         ctx.plan = plan
@@ -48,11 +56,12 @@ async def orchestrate_classify(
         agent_dispatch = {
             AgentType.CALENDAR: run_calendar_agent,
             AgentType.CLASSIFICATION: run_classification_agent,
+            AgentType.THREAD: run_thread_agent,
         }
 
         for step in plan.steps:
-            if step.agent == AgentType.DRAFT:
-                continue  # Draft is handled separately via orchestrate_draft
+            if step.agent in (AgentType.DRAFT, AgentType.MEMORY):
+                continue  # Draft handled separately; memory already ran
             handler = agent_dispatch.get(step.agent)
             if handler:
                 try:
@@ -66,7 +75,6 @@ async def orchestrate_classify(
 
         # ── Ensure classification was produced ─────────────────────────
         if ctx.classification is None:
-            # Classification agent wasn't in the plan or failed — run it
             log.info("orchestrator_force_classification", extra={"email_id": email.id})
             await run_classification_agent(ctx)
 
@@ -98,7 +106,6 @@ async def orchestrate_classify(
             "orchestrator_fallback_to_classic",
             extra={"error": str(exc), "email_id": email.id},
         )
-        # Resilient degradation: fall back to Classic mode
         from src.services import classifier
         return await classifier.classify(email, calendar_events, ai_mode="classic")
 
@@ -121,6 +128,12 @@ async def orchestrate_draft(
             calendar_events=calendar_events or [],
         )
         ctx.classification = classification
+
+        # ── Memory agent (for tone matching and context) ───────────────
+        try:
+            await run_memory_agent(ctx)
+        except Exception:
+            pass
 
         # ── Run calendar agent to get availability context ─────────────
         await run_calendar_agent(ctx)
@@ -148,7 +161,6 @@ async def orchestrate_draft(
             "orchestrator_draft_fallback_to_classic",
             extra={"error": str(exc), "email_id": email.id},
         )
-        # Resilient degradation
         from src.services import drafter
         return await drafter.draft_reply(
             email, classification,

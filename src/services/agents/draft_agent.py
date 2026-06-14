@@ -13,7 +13,7 @@ from src.llm import client as llm
 from src.llm.prompts import RICH_DRAFT_SYSTEM, RICH_DRAFT_USER
 from src.models.email import DraftReply
 from src.services.agents.context import SharedAgentContext
-from src.services.classifier import _strip_quoted_text
+from src.services.email_utils import strip_quoted_text
 from src.services.pii import PrivacyGateway, redact
 from src.storage import safe_store_pii_mappings
 
@@ -37,7 +37,7 @@ async def run_draft_agent(ctx: SharedAgentContext, *, quality: str = "balanced")
         return
 
     # ── Build body sections ────────────────────────────────────────────
-    latest_body = _strip_quoted_text(email.body)
+    latest_body = strip_quoted_text(email.body)
     full_body = email.body
     thread_part = full_body[len(latest_body):].strip()
     thread_context_block = ""
@@ -84,6 +84,24 @@ async def run_draft_agent(ctx: SharedAgentContext, *, quality: str = "balanced")
         availability_summary=cal.availability_summary,
     )
 
+    # ── Inject memory context (tone preference, instructions) ──────────
+    if ctx.memory:
+        mem = ctx.memory
+        memory_parts = []
+        if mem.sender_profile and mem.sender_profile.tone_preference != "professional":
+            memory_parts.append(f"Match this tone: {mem.sender_profile.tone_preference}")
+        prefs = [p for p in mem.user_preferences if "drafting" in p.lower()]
+        if prefs:
+            memory_parts.append("Your drafting instructions:\n" +
+                                "\n".join(f"  - {p}" for p in prefs[:3]))
+        if memory_parts:
+            user_msg += "\n\n--- Personalization ---\n" + "\n".join(memory_parts)
+
+    # ── Determine tone from sender profile ─────────────────────────────
+    tone = "professional"
+    if ctx.memory and ctx.memory.sender_profile:
+        tone = ctx.memory.sender_profile.tone_preference or "professional"
+
     # ── Quality parameters ─────────────────────────────────────────────
     quality_params = {
         "quick": (0.3, 400),
@@ -108,9 +126,33 @@ async def run_draft_agent(ctx: SharedAgentContext, *, quality: str = "balanced")
         {_pii_type(m.entity_type) for m in privacy.mappings} | set(result.found_types)
     )
 
+    # ── Generate alternatives for balanced/thorough ────────────────────
+    alternatives: list[str] = []
+    if quality in ("balanced", "thorough"):
+        alt_tones = [
+            ("concise", "Reply in 2-3 sentences. Be brief and direct."),
+            ("warm", "Reply warmly. Use a friendly, approachable tone."),
+        ]
+        for alt_tone, alt_instruction in alt_tones:
+            try:
+                alt_raw = await llm.chat(
+                    messages=[
+                        {"role": "system", "content": RICH_DRAFT_SYSTEM},
+                        {"role": "user", "content": user_msg + f"\n\nTone override: {alt_instruction}"},
+                    ],
+                    temperature=temperature + 0.1,
+                    max_tokens=max_tokens // 2,
+                )
+                alt_rehydrated = privacy.rehydrate_text(alt_raw.strip())
+                alt_result = _redact_new_pii(alt_rehydrated, allowed_values={m.original for m in privacy.mappings})
+                alternatives.append(alt_result.text)
+            except Exception:
+                pass  # Non-critical — skip alternative on error
+
     draft = DraftReply(
         body=result.text,
-        tone="professional",
+        alternatives=alternatives,
+        tone=tone,
         quality=quality,
         pii_redacted=result.was_redacted,
         redacted_types=pii_types,
@@ -118,14 +160,15 @@ async def run_draft_agent(ctx: SharedAgentContext, *, quality: str = "balanced")
 
     ctx.draft = draft
     safe_store_pii_mappings(email.id, "rich_draft", privacy.mappings)
-    ctx.record_agent("draft_agent")
+    ctx.record_agent("draft_agent", llm_calls=1 + len(alternatives))
 
     log.info(
         "draft_agent_complete",
         extra={
             "email_id": email.id,
             "quality": quality,
-            "calendar_instruction_len": len(calendar_instruction),
+            "tone": tone,
+            "alternatives": len(alternatives),
         },
     )
 

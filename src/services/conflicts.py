@@ -177,12 +177,37 @@ def find_free_slots(
     working_start_hour: int = 9,
     working_end_hour: int = 18,
     min_duration_minutes: int = 30,
+    constraints: list[str] | None = None,
 ) -> list[TimeSlot]:
     """Find free time windows on a given date, considering existing events.
 
     Only looks within working hours. Returns slots of at least
     ``min_duration_minutes`` length.
+
+    ``constraints`` is a list of natural-language scheduling constraints
+    from user preferences (e.g. "no meetings before 10am", "lunch 12-1pm").
+    These are parsed heuristically to narrow the working window.
     """
+    # ── Apply constraints to working hours ─────────────────────────────
+    if constraints:
+        import re
+        for c in constraints:
+            c_lower = c.lower()
+            # "no meetings before Xam/pm"
+            m = re.search(r"before\s+(\d{1,2})\s*(am|pm)?", c_lower)
+            if m:
+                h = int(m.group(1))
+                if m.group(2) == "pm" and h != 12:
+                    h += 12
+                working_start_hour = max(working_start_hour, h)
+            # "no meetings after Xpm"
+            m = re.search(r"after\s+(\d{1,2})\s*(am|pm)?", c_lower)
+            if m:
+                h = int(m.group(1))
+                if m.group(2) == "pm" and h != 12:
+                    h += 12
+                working_end_hour = min(working_end_hour, h)
+
     target_date = date.date()
 
     # Collect busy windows on the target date (wall-clock times)
@@ -196,6 +221,17 @@ def find_free_slots(
             return []
         ev_e = wall_clock(ev.end) if ev.end else ev_s + timedelta(hours=1)
         busy.append((ev_s, ev_e))
+
+    # ── Add lunch block if user has that constraint ────────────────────
+    if constraints:
+        for c in constraints:
+            if "lunch" in c.lower():
+                import re
+                m = re.search(r"(\d{1,2})\s*[-–]\s*(\d{1,2})", c)
+                if m:
+                    lunch_s = datetime(target_date.year, target_date.month, target_date.day, int(m.group(1)), 0)
+                    lunch_e = datetime(target_date.year, target_date.month, target_date.day, int(m.group(2)), 0)
+                    busy.append((lunch_s, lunch_e))
 
     # Sort by start time
     busy.sort(key=lambda pair: pair[0])

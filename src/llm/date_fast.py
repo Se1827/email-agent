@@ -1,9 +1,10 @@
-"""Fast regex + dateutil date resolver — no LLM calls.
+"""Fast regex + stdlib datetime date resolver — no LLM calls.
 
 Classic Mode uses this as the *primary* date resolution path. It tries
 well-known patterns (ordinals, day names, relative phrases, ISO dates)
-using regex and ``python-dateutil``. Returns a ``ResolvedDate`` on success
-or ``None`` to signal "fall back to the LLM resolver."
+using regex and ``datetime`` from the standard library. Returns a
+``ResolvedDate`` on success or ``None`` to signal "fall back to the LLM
+resolver."
 
 AI-Rich Mode skips this module entirely and always uses the LLM resolver
 for maximum accuracy on ambiguous inputs.

@@ -74,6 +74,10 @@ async def draft_reply(
     Availability is derived from the classifier's reasoning (which already
     checked the calendar). The drafter does NOT independently resolve dates
     or check the calendar — it trusts the classifier's verdict.
+
+    Note: ``calendar_events`` is accepted for API compatibility with AI-Rich
+    mode (which uses the orchestrator to provide calendar context directly).
+    In Classic mode, it is intentionally unused — this is NOT a bug.
     """
     privacy = PrivacyGateway()
 

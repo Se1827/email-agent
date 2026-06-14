@@ -279,10 +279,24 @@
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.cal-event-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: var(--space-3);
+  flex-shrink: 0;
+}
+.cal-event-prepare {
+  font-size: 11px;
+  padding: 4px 10px;
+  gap: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.cal-event-card:hover .cal-event-prepare { opacity: 1; }
 .cal-event-delete {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
   opacity: 0;
   color: var(--error);
   transition: opacity 0.2s ease;
@@ -292,6 +306,14 @@
 }
 .cal-event-card:hover .cal-event-delete { opacity: 1; }
 .cal-event-delete:hover { background: rgba(244, 63, 94, 0.2); }
+
+.pulse-icon {
+  animation: pulse-soft 1.5s ease-in-out infinite;
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.1); }
+}
 
 /* ---- Modal (Premium) ---- */
 .modal-overlay {

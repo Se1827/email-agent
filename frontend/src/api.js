@@ -162,3 +162,63 @@ export function updateAIMode(mode) {
         body: JSON.stringify({ ai_mode: mode }),
     });
 }
+
+// ---- Preferences ----
+export function fetchPreferences(prefType) {
+    const params = prefType ? `?pref_type=${prefType}` : '';
+    return request(`/preferences${params}`);
+}
+export function createPreference(prefType, prefKey, prefValue) {
+    return request('/preferences', {
+        method: 'POST',
+        body: JSON.stringify({ pref_type: prefType, pref_key: prefKey, pref_value: prefValue }),
+    });
+}
+export function deletePreference(id) {
+    return request(`/preferences/${id}`, { method: 'DELETE' });
+}
+
+// ---- Action Items ----
+export function fetchActionItems(status, emailId) {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (emailId) params.set('email_id', emailId);
+    const qs = params.toString();
+    return request(`/actions${qs ? '?' + qs : ''}`);
+}
+export function extractActionItems(emailId) {
+    return request(`/emails/${emailId}/extract-actions`, { method: 'POST' });
+}
+export function updateActionItem(id, status) {
+    return request(`/actions/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+    });
+}
+
+// ---- Semantic Search ----
+export function searchEmails(query, limit = 5) {
+    return request('/search', {
+        method: 'POST',
+        body: JSON.stringify({ query, limit }),
+    });
+}
+
+// ---- Sender Profiles ----
+export function fetchSenderProfile(emailAddress) {
+    return request(`/sender-profiles/${encodeURIComponent(emailAddress)}`);
+}
+export function updateSenderProfile(emailAddress, updates) {
+    return request(`/sender-profiles/${encodeURIComponent(emailAddress)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+    });
+}
+
+// ---- Digest & Briefing ----
+export function fetchDailyDigest() {
+    return request('/digest');
+}
+export function fetchMeetingBrief(eventId) {
+    return request(`/calendar/events/${eventId}/brief`);
+}
