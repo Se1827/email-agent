@@ -338,6 +338,7 @@ def idle_loop(
     """
     klass = imaplib.IMAP4_SSL if use_ssl else imaplib.IMAP4
     while True:
+        conn = None
         try:
             conn = klass(host, port)
             conn.login(username, password)
@@ -379,10 +380,11 @@ def idle_loop(
         except Exception as e:
             log.error("idle_loop_error", extra={"error": str(e), "user": username})
         finally:
-            try:
-                conn.logout()
-            except Exception:
-                pass
+            if conn:
+                try:
+                    conn.logout()
+                except Exception:
+                    pass
         
         time.sleep(15)
 # ---- Attachment helpers (appended for attachment scanning) -----------------

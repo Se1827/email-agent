@@ -376,8 +376,8 @@ function AITab({ showToast }) {
           <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
             <select className="select" style={{width:130}} value={newPref.pref_type} onChange={e => setNewPref(p => ({...p, pref_type: e.target.value}))}>
               <option value="general">General</option>
-              <option value="scheduling">Scheduling</option>
-              <option value="drafting">Drafting</option>
+              <option value="scheduling_constraint">Scheduling</option>
+              <option value="drafting_instruction">Drafting</option>
               <option value="vip">VIP</option>
             </select>
             <input className="input" style={{flex:1,minWidth:120}} placeholder="Key" value={newPref.pref_key} onChange={e => setNewPref(p => ({...p, pref_key: e.target.value}))} />
