@@ -22,11 +22,20 @@ import re
 from datetime import datetime, timedelta
 
 from src.llm import client as llm
+from src.llm.date_fast import resolve_fast
 from src.llm.date_resolver import ResolvedDate, resolve_proposed_datetime
 from src.llm.prompts import CLASSIFY_SYSTEM, CLASSIFY_USER
-from src.models.email import CalendarEvent, Classification, Email
+from src.models.email import CalendarEvent, Classification, Email, Priority
+from src.services.conflicts import (
+    check_full_calendar_conflict,
+    format_conflict_context,
+    has_calendar_conflict,
+    wall_clock,
+)
 from src.services.pii import PrivacyGateway
+from src.services.rules import evaluate_rules
 from src.storage import safe_store_pii_mappings
+from src.config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -286,200 +295,6 @@ def filter_relevant_events(
     return relevant
 
 
-def _format_relevant_context(
-    events: list[CalendarEvent],
-    candidate_start: datetime | None = None,
-    candidate_end: datetime | None = None,
-    *,
-    all_events: list[CalendarEvent] | None = None,
-    candidate_is_all_day: bool = False,
-) -> str:
-    """Format relevant events for the prompt with explicit conflict/free labels.
-
-    If candidate_start is provided, each event is labelled CONFLICT or free
-    so the LLM does not have to infer availability.
-
-    When ``all_events`` is supplied the function also checks for conflicts
-    against the *full* calendar — not just the semantically-relevant subset.
-    This catches scenarios like "tomorrow" mapping to a day with an all-day
-    event that has no keyword/attendee overlap with the email.
-    """
-    if candidate_start is not None:
-        cand_s = _wall_clock(candidate_start)
-        if candidate_is_all_day:
-            # Date-only mention ("tomorrow", bare ordinal) — treat the
-            # *entire day* as the proposed window so all-day events conflict.
-            cand_e = cand_s.replace(hour=23, minute=59)
-        else:
-            cand_e = _wall_clock(candidate_end) if candidate_end else cand_s + timedelta(hours=1)
-    else:
-        cand_s = cand_e = None
-
-    # ── Build the event list section ───────────────────────────────────
-    if not events and cand_s is None:
-        return "--- Calendar context ---\nYou have no relevant calendar events. You are free."
-
-    lines = ["--- Calendar context (events related to this email) ---"]
-    any_conflict = False
-    for ev in events:
-        date_str = ev.start.strftime("%a %b %d, %H:%M")
-        end_str = ev.end.strftime("%H:%M") if ev.end and ev.end != ev.start else ""
-        time_display = "All day" if ev.is_all_day else f"{date_str}\u2013{end_str}" if end_str else date_str
-        attendees = ", ".join(ev.attendees) if ev.attendees else "just you"
-        location = f" @ {ev.location}" if ev.location else ""
-
-        if cand_s is not None:
-            ev_s = _wall_clock(ev.start)
-            ev_e = _wall_clock(ev.end) if ev.end else ev_s + timedelta(hours=1)
-            same_day = ev_s.date() == cand_s.date()
-            if ev.is_all_day and same_day:
-                label = " [CONFLICT: all-day event]"
-                any_conflict = True
-            elif same_day and cand_s < ev_e and ev_s < cand_e:
-                label = " [CONFLICT: time overlaps]"
-                any_conflict = True
-            else:
-                label = " [no conflict]"
-        else:
-            label = ""
-
-        lines.append(f"  - {ev.title}: {time_display}{location} (with {attendees}){label}")
-        if ev.description:
-            lines.append(f"    Note: {ev.description[:100]}")
-
-    # ── Full-calendar conflict check ──────────────────────────────────
-    # Even if no semantically-relevant events were found, there may be a
-    # blocking event on the candidate date (e.g. an all-day "Do Not
-    # Disturb" event that has no keyword overlap with the email).
-    if cand_s is not None and not any_conflict and all_events:
-        full_conflict = _check_full_calendar_conflict(
-            cand_s, cand_e, candidate_is_all_day, all_events,
-        )
-        if full_conflict:
-            any_conflict = True
-            fc_title = full_conflict.title
-            fc_display = "All day" if full_conflict.is_all_day else full_conflict.start.strftime("%H:%M")
-            lines.append(f"  - {fc_title}: {fc_display} [CONFLICT: blocks requested time]")
-
-    # ── Explicit availability verdict ─────────────────────────────────
-    if cand_s is not None:
-        date_label = cand_s.strftime("%A, %b %d")
-        if any_conflict:
-            lines.append(f"AVAILABILITY: You are NOT free on {date_label}. You MUST decline or propose an alternative.")
-        else:
-            lines.append(f"AVAILABILITY: You ARE free on {date_label}. You can accept the proposed time.")
-    elif not events:
-        lines.append("No relevant calendar events found — you appear to be free.")
-
-    return "\n".join(lines)
-
-
-def _wall_clock(dt: datetime) -> datetime:
-    """Strip timezone info to get the local wall-clock time as a naive datetime.
-
-    This is intentional: calendar events from calendar.json are stored in
-    local time (e.g. 16:00+05:30) and emails produce naive datetimes from
-    natural-language extraction (e.g. "4pm" → 16:00 naive). Converting both
-    to UTC would shift them apart (10:30 vs 16:00). Instead we compare them
-    as wall-clock times — "4pm is 4pm" regardless of what timezone the
-    calendar file happens to store.
-    """
-    return dt.replace(tzinfo=None)
-
-
-def _check_full_calendar_conflict(
-    cand_start: datetime,
-    cand_end: datetime,
-    candidate_is_all_day: bool,
-    all_events: list[CalendarEvent],
-) -> CalendarEvent | None:
-    """Check the full calendar for any event that blocks the candidate window.
-
-    This is a lighter version of ``has_calendar_conflict`` that works with
-    raw start/end datetimes instead of requiring a CalendarEvent wrapper.
-    """
-    cand_date = cand_start.date()
-    for ev in all_events:
-        ev_s = _wall_clock(ev.start)
-        if ev_s.date() != cand_date:
-            continue
-        ev_e = _wall_clock(ev.end) if ev.end else ev_s + timedelta(hours=1)
-        # All-day event on the same day always conflicts
-        if ev.is_all_day:
-            return ev
-        # If the candidate is all-day, any timed event on that day conflicts
-        if candidate_is_all_day:
-            return ev
-        # Timed overlap
-        if cand_start < ev_e and ev_s < cand_end:
-            return ev
-    return None
-
-
-def has_calendar_conflict(
-    candidate: CalendarEvent,
-    existing_events: list[CalendarEvent],
-) -> CalendarEvent | None:
-    """Return the first existing event that conflicts with the candidate.
-
-    Conflict = same calendar date AND wall-clock time ranges overlap
-    (or either event is all-day).
-
-    We compare wall-clock times (tzinfo stripped) because:
-    - Existing events: stored as local time with offset, e.g. 16:00+05:30
-    - Candidate events: extracted from email text as naive, e.g. 16:00
-    - UTC-normalizing these gives 10:30 vs 16:00 → false "no conflict"
-    """
-    candidate_start = _wall_clock(candidate.start)
-    candidate_end = (
-        _wall_clock(candidate.end) if candidate.end
-        else candidate_start + timedelta(hours=1)
-    )
-    candidate_date = candidate_start.date()
-
-    for event in existing_events:
-        if event.id == candidate.id:
-            continue
-
-        event_start = _wall_clock(event.start)
-        event_end = (
-            _wall_clock(event.end) if event.end
-            else event_start + timedelta(hours=1)
-        )
-
-        # Must be same calendar date
-        if event_start.date() != candidate_date:
-            continue
-
-        # All-day events block the entire day
-        if event.is_all_day or candidate.is_all_day:
-            log.info(
-                "calendar_conflict_detected",
-                extra={
-                    "candidate_id": candidate.id,
-                    "conflicting_event_id": event.id,
-                    "conflicting_event_title": event.title,
-                    "reason": "all_day_overlap",
-                },
-            )
-            return event
-
-        # Timed overlap: start_A < end_B AND start_B < end_A
-        if candidate_start < event_end and event_start < candidate_end:
-            log.info(
-                "calendar_conflict_detected",
-                extra={
-                    "candidate_id": candidate.id,
-                    "conflicting_event_id": event.id,
-                    "conflicting_event_title": event.title,
-                    "reason": "time_overlap",
-                    "candidate_window": f"{candidate_start.isoformat()}–{candidate_end.isoformat()}",
-                    "existing_window": f"{event_start.isoformat()}–{event_end.isoformat()}",
-                },
-            )
-            return event
-
-    return None
 
 # ── Auto-event creation from meeting / action-required emails ──────────────
 
@@ -572,8 +387,12 @@ def extract_meeting_event(
 async def classify(
     email: Email,
     calendar_events: list[CalendarEvent] | None = None,
+    ai_mode: str = "classic",
 ) -> tuple[Classification, ResolvedDate | None]:
     """Classify an email by priority and category.
+
+    In Classic mode, uses the fast regex date resolver first, falling back
+    to the LLM resolver only when the fast path returns None.
 
     Returns a (Classification, ResolvedDate | None) tuple. The resolved date
     is extracted by an LLM sub-agent and should be forwarded to
@@ -581,12 +400,39 @@ async def classify(
     """
     privacy = PrivacyGateway()
     all_events = calendar_events or []
+    cfg = get_settings()
 
-    # ── LLM date resolution (replaces regex extraction) ───────────────
+    # ── Rule engine pre-pass ────────────────────────────────────────────
+    # Skip LLM for obvious spam/newsletters, pre-set priority for VIP/urgent.
+    rule_verdict = evaluate_rules(email, cfg.data_dir)
+    if rule_verdict.skip_llm:
+        result = Classification(
+            priority=rule_verdict.pre_priority or Priority.LOW,
+            category=rule_verdict.pre_category or Category.SPAM,
+            confidence=0.95,
+            reasoning=f"Rule engine: {'; '.join(rule_verdict.reasons)}",
+            explanation_factors=rule_verdict.reasons,
+        )
+        log.info(
+            "classified_by_rules",
+            extra={
+                "email_id": email.id,
+                "priority": result.priority.value,
+                "category": result.category.value,
+                "reasons": rule_verdict.reasons,
+            },
+        )
+        return result, None
+
+    # ── Date resolution ────────────────────────────────────────────────
     clean_body = _strip_quoted_text(email.body)
-    resolved = await resolve_proposed_datetime(
-        email.subject, clean_body, email.timestamp,
-    )
+
+    # Classic mode: try fast regex path first, fallback to LLM
+    resolved = resolve_fast(email.subject, clean_body, email.timestamp)
+    if resolved is None:
+        resolved = await resolve_proposed_datetime(
+            email.subject, clean_body, email.timestamp,
+        )
 
     # Build calendar context using LLM-resolved date
     if resolved:
@@ -597,9 +443,26 @@ async def classify(
         _cs = _ce = None
         _candidate_is_all_day = False
 
-    relevant_events = filter_relevant_events(email, all_events)
+    # ── Narrow calendar fetch ───────────────────────────────────────────
+    # Pre-filter events by date range to reduce prompt token usage.
+    if resolved and resolved.date:
+        # If we resolved a date, only consider events within ±2 days
+        target = resolved.date.date() if hasattr(resolved.date, 'date') else resolved.date
+        narrowed = [
+            ev for ev in all_events
+            if abs((wall_clock(ev.start).date() - target).days) <= 2
+        ]
+    else:
+        # No date resolved — only consider events in the next 7 days
+        now = datetime.now()
+        narrowed = [
+            ev for ev in all_events
+            if 0 <= (wall_clock(ev.start).date() - now.date()).days <= 7
+        ]
 
-    cal_ctx = _format_relevant_context(
+    relevant_events = filter_relevant_events(email, narrowed)
+
+    cal_ctx = format_conflict_context(
         relevant_events, _cs, _ce,
         all_events=all_events,
         candidate_is_all_day=_candidate_is_all_day,
@@ -624,12 +487,20 @@ async def classify(
 
     parsed = _parse_classification(raw)
 
+    # ── Apply rule engine overrides ────────────────────────────────────
+    # If the rule engine pre-set a priority (VIP/urgent), override the LLM.
+    if rule_verdict.pre_priority is not None:
+        priority_order = {Priority.CRITICAL: 3, Priority.HIGH: 2, Priority.NORMAL: 1, Priority.LOW: 0}
+        if priority_order.get(rule_verdict.pre_priority, 0) > priority_order.get(parsed.priority, 0):
+            parsed.priority = rule_verdict.pre_priority
+            parsed.explanation_factors.extend(rule_verdict.reasons)
+
     # ── Append deterministic availability note to reasoning ────────────
     # Only when the LLM resolver found a proposed date (avoids false
     # positives on newsletters / informational emails).
     if resolved and _cs is not None:
-        conflict = _check_full_calendar_conflict(
-            _wall_clock(_cs), _wall_clock(_ce),
+        conflict = check_full_calendar_conflict(
+            wall_clock(_cs), wall_clock(_ce),
             _candidate_is_all_day, all_events,
         )
         if conflict:
@@ -638,11 +509,13 @@ async def classify(
                 f"You are NOT available at the proposed time: "
                 f"conflict with \"{conflict.title}\""
             )
+            parsed.explanation_factors.append(f"conflict with \"{conflict.title}\"")
         else:
             parsed.reasoning = (
                 f"{parsed.reasoning} — "
                 f"You ARE available at the proposed time."
             )
+            parsed.explanation_factors.append("available at proposed time")
 
     safe_store_pii_mappings(email.id, "classification", privacy.mappings)
     log.info(
@@ -655,6 +528,7 @@ async def classify(
             "total_events": len(all_events),
             "resolved_date": resolved.date.isoformat() if resolved else None,
             "resolved_is_all_day": resolved.is_all_day if resolved else None,
+            "ai_mode": ai_mode,
         },
     )
     return parsed, resolved

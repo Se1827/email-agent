@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronDown, PenSquare, Menu } from 'lucide-react';
 import InboxNavbar from '../components/InboxNavbar';
 import EmailList from '../components/EmailList';
@@ -69,28 +69,29 @@ function InboxPage() {
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
 
+  // Use a ref to track whether we have emails (avoids re-render loop)
+  const emailCountRef = useRef(0);
+  emailCountRef.current = emails.length;
+
   const loadEmails = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
       if (selectedAccountId === 'outlook') {
-        // Outlook-only view: fetch from Graph endpoint
         const graphData = await fetchGraphEmails();
         setEmails(graphData);
       } else if (selectedAccountId === 'all') {
-        // All accounts: merge regular + Outlook
         const [regularData, graphData] = await Promise.all([
           fetchEmails(null).catch(() => []),
           fetchGraphEmails().catch(() => []),
         ]);
         setEmails([...regularData, ...graphData]);
       } else {
-        // Specific non-Outlook account
         const data = await fetchEmails(selectedAccountId);
         setEmails(data);
       }
       setError(null);
     } catch (err) {
-      if (emails.length === 0) {
+      if (emailCountRef.current === 0) {
         setError('Cannot reach the API server. Is it running on :8000?');
       } else {
         console.error('API server unreachable, preserving existing session data:', err);
@@ -98,15 +99,15 @@ function InboxPage() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [selectedAccountId, emails.length]);
+  }, [selectedAccountId]);
 
   useEffect(() => {
     loadEmails(true);
     
-    // Auto-fetch polling every 5 seconds
+    // Background polling every 15s — stable interval, no flickering
     const interval = setInterval(() => {
       loadEmails(false);
-    }, 5000);
+    }, 15000);
     
     return () => clearInterval(interval);
   }, [loadEmails]);

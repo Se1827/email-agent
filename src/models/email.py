@@ -70,8 +70,11 @@ class Classification(BaseModel):
     category: Category
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = ""
+    explanation_factors: list[str] = Field(default_factory=list)
+    # e.g. ["sender is VIP", "deadline mentioned", "related meeting tomorrow"]
 class DraftReply(BaseModel):
-    body: str
+    body: str                    # primary draft (backward compat)
+    alternatives: list[str] = Field(default_factory=list)  # 0-2 alternative drafts
     tone: str = "professional"
     quality: str = "balanced"
     pii_redacted: bool = False

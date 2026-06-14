@@ -4,7 +4,7 @@ import {
   Eye, EyeOff, Lock, Activity, Plus, Save, Trash2,
   X, Pencil, Check, RefreshCw, ExternalLink, Copy,
   ChevronRight, AlertTriangle, CheckCircle, WifiOff,
-  Wifi, Loader, Info, Zap,
+  Wifi, Loader, Info, Zap, Brain, ListChecks, Sparkles,
 } from 'lucide-react';
 import {
   createAccount, deleteAccount, fetchAccounts, fetchStorageStats,
@@ -12,6 +12,8 @@ import {
   fetchSettings, saveSettings,
   fetchStorageSetupStatus, setupStorage,
   triggerGraphLogin, fetchGraphLoginStatus,
+  fetchAIMode, updateAIMode,
+  fetchPreferences, createPreference, deletePreference,
 } from '../api';
 import './SettingsPage.css';
 
@@ -235,8 +237,23 @@ function AITab({ showToast }) {
   const [keyInput, setKeyInput] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // AI Mode state
+  const [aiMode, setAiMode] = useState(null);
+  const [switchingMode, setSwitchingMode] = useState(false);
+  const aiModeOptions = [
+    { value: 'classic', label: 'Classic', badge: 'Fast', description: 'Single-pass LLM classification. Cost-effective and deterministic.' },
+    { value: 'ai_rich', label: 'AI-Rich', badge: 'Multi-Agent', description: 'Memory, calendar, thread analysis, and orchestrated drafting.' },
+  ];
+
+  // Preferences state
+  const [preferences, setPreferences] = useState([]);
+  const [showAddPref, setShowAddPref] = useState(false);
+  const [newPref, setNewPref] = useState({ pref_type: 'general', pref_key: '', pref_value: '' });
+
   useEffect(() => {
     fetchSettings().then(data => { setS(data); setKeyInput(''); }).catch(() => { });
+    fetchAIMode().then(data => setAiMode(data.ai_mode)).catch(() => {});
+    fetchPreferences().then(data => setPreferences(data)).catch(() => {});
   }, []);
 
   const save = async () => {
@@ -251,12 +268,57 @@ function AITab({ showToast }) {
     finally { setSaving(false); }
   };
 
+  const handleAIModeSwitch = async (newMode) => {
+    if (newMode === aiMode || switchingMode) return;
+    setSwitchingMode(true);
+    try {
+      const result = await updateAIMode(newMode);
+      setAiMode(result.ai_mode);
+      showToast(`Switched to ${newMode === 'ai_rich' ? 'AI-Rich' : 'Classic'} mode.`);
+    } catch (err) {
+      showToast(err.message || 'Could not switch AI mode.', 'error');
+    } finally { setSwitchingMode(false); }
+  };
+
+  const handleAddPref = async () => {
+    if (!newPref.pref_key.trim() || !newPref.pref_value.trim()) return;
+    try {
+      await createPreference(newPref.pref_type, newPref.pref_key, newPref.pref_value);
+      const updated = await fetchPreferences();
+      setPreferences(updated);
+      setNewPref({ pref_type: 'general', pref_key: '', pref_value: '' });
+      setShowAddPref(false);
+      showToast('Preference saved.');
+    } catch (err) { showToast(err.message || 'Could not save preference.', 'error'); }
+  };
+
+  const handleDeletePref = async (id) => {
+    try {
+      await deletePreference(id);
+      setPreferences(prev => prev.filter(p => p.id !== id));
+      showToast('Preference removed.');
+    } catch (err) { showToast(err.message || 'Could not delete preference.', 'error'); }
+  };
+
   if (!s) return <div className="s-loading"><Loader size={20} className="spin" /> Loading…</div>;
 
   return (
     <div className="stab">
       <div className="stab-header">
         <div><h2>AI & LLM</h2><p>Groq API key, model, and email processing defaults.</p></div>
+      </div>
+
+      {/* AI Mode Switcher */}
+      <div className="s-section">
+        <div className="s-field-label"><Brain size={14} style={{verticalAlign:'text-bottom',marginRight:4}} />AI Engine Mode{aiMode && <span className={`s-badge ${aiMode === 'ai_rich' ? 's-badge--on' : ''}`}>{aiMode === 'ai_rich' ? 'AI-Rich' : 'Classic'}</span>}</div>
+        <div className="radio-group">
+          {aiModeOptions.map(opt => (
+            <label key={opt.value} className={`radio-card ${aiMode === opt.value ? 'active' : ''} ${switchingMode ? 'switching' : ''}`} onClick={() => handleAIModeSwitch(opt.value)}>
+              <input type="radio" name="ai_mode" value={opt.value} checked={aiMode === opt.value} readOnly />
+              <div><strong>{opt.label}</strong> <span className="s-badge">{opt.badge}</span><br /><span>{opt.description}</span></div>
+            </label>
+          ))}
+        </div>
       </div>
 
       <div className="s-section">
@@ -302,6 +364,43 @@ function AITab({ showToast }) {
 
       <div className="editor-actions">
         <button className="btn btn-primary" onClick={save} disabled={saving}><Save size={14} />{saving ? 'Saving…' : 'Save AI settings'}</button>
+      </div>
+
+      {/* User Preferences */}
+      <div className="s-section" style={{marginTop: 24, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 20}}>
+        <div className="s-field-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span><ListChecks size={14} style={{verticalAlign:'text-bottom',marginRight:4}} />Your Preferences</span>
+          <button className="btn btn-secondary" style={{fontSize:12,padding:'4px 10px'}} onClick={() => setShowAddPref(!showAddPref)}><Plus size={12} /> Add</button>
+        </div>
+        {showAddPref && (
+          <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+            <select className="select" style={{width:130}} value={newPref.pref_type} onChange={e => setNewPref(p => ({...p, pref_type: e.target.value}))}>
+              <option value="general">General</option>
+              <option value="scheduling">Scheduling</option>
+              <option value="drafting">Drafting</option>
+              <option value="vip">VIP</option>
+            </select>
+            <input className="input" style={{flex:1,minWidth:120}} placeholder="Key" value={newPref.pref_key} onChange={e => setNewPref(p => ({...p, pref_key: e.target.value}))} />
+            <input className="input" style={{flex:2,minWidth:160}} placeholder="Value" value={newPref.pref_value} onChange={e => setNewPref(p => ({...p, pref_value: e.target.value}))} />
+            <button className="btn btn-primary" style={{fontSize:12}} onClick={handleAddPref}><Check size={12} /> Save</button>
+          </div>
+        )}
+        {preferences.length > 0 ? (
+          <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:12}}>
+            {preferences.map(p => (
+              <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:'rgba(255,255,255,0.03)',borderRadius:8,fontSize:13}}>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <span className={`s-badge`} style={{fontSize:10}}>{p.pref_type}</span>
+                  <strong>{p.pref_key}</strong>
+                  <span style={{color:'var(--text-secondary)'}}>{p.pref_value}</span>
+                </div>
+                <button className="btn-icon" onClick={() => handleDeletePref(p.id)} title="Remove"><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="s-hint" style={{marginTop:8}}>No preferences set. Add scheduling constraints, drafting instructions, or VIP senders.</p>
+        )}
       </div>
     </div>
   );

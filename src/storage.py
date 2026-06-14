@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS semantic_memories (
     email_id TEXT,
     thread_id TEXT,
     summary TEXT NOT NULL,
-    embedding VECTOR(1536),
+    embedding VECTOR(384),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -93,6 +93,49 @@ CREATE INDEX IF NOT EXISTS idx_semantic_memories_thread
     ON semantic_memories (thread_id);
 CREATE INDEX IF NOT EXISTS idx_semantic_memories_metadata
     ON semantic_memories USING GIN (metadata);
+
+-- Sender profiles for personalization and VIP detection
+CREATE TABLE IF NOT EXISTS sender_profiles (
+    email_address TEXT PRIMARY KEY,
+    display_name TEXT,
+    relationship TEXT DEFAULT 'unknown',
+    tone_preference TEXT DEFAULT 'professional',
+    avg_priority TEXT DEFAULT 'normal',
+    interaction_count INTEGER DEFAULT 0,
+    last_interaction TIMESTAMPTZ,
+    is_vip BOOLEAN DEFAULT FALSE,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- User preferences and standing instructions
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pref_type TEXT NOT NULL,
+    pref_key TEXT NOT NULL,
+    pref_value TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (pref_type, pref_key)
+);
+
+-- Action items extracted from emails
+CREATE TABLE IF NOT EXISTS action_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email_id TEXT NOT NULL,
+    thread_id TEXT,
+    description TEXT NOT NULL,
+    due_date TIMESTAMPTZ,
+    status TEXT DEFAULT 'pending',
+    extracted_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_action_items_email
+    ON action_items (email_id);
+CREATE INDEX IF NOT EXISTS idx_action_items_status
+    ON action_items (status);
 """
 
 
@@ -803,6 +846,27 @@ def _init_pgvector() -> None:
     try:
         with psycopg.connect(_database_url()) as conn:
             with conn.cursor() as cur:
+                # ── Migrate VECTOR(1536) → VECTOR(384) if needed ───────
+                # The old schema used 1536 dims (OpenAI-compatible). We now
+                # use sentence-transformers/all-MiniLM-L6-v2 which is 384.
+                try:
+                    cur.execute("""
+                        SELECT atttypmod FROM pg_attribute
+                        WHERE attrelid = 'semantic_memories'::regclass
+                          AND attname = 'embedding'
+                    """)
+                    row = cur.fetchone()
+                    if row and row[0] == 1536:
+                        log.info("migrating_vector_dimension", extra={
+                            "from": 1536, "to": 384,
+                        })
+                        cur.execute("ALTER TABLE semantic_memories DROP COLUMN embedding")
+                        cur.execute("ALTER TABLE semantic_memories ADD COLUMN embedding VECTOR(384)")
+                        conn.commit()
+                except Exception:
+                    # Table doesn't exist yet — that's fine, CREATE below
+                    conn.rollback()
+
                 cur.execute(PGVECTOR_SQL)
             conn.commit()
     except Exception as exc:

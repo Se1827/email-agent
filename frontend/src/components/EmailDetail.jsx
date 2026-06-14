@@ -2,11 +2,12 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Shield, Sparkles, RotateCcw, Send, Zap, Clock, Gauge,
   ChevronDown, ChevronUp, Reply, ReplyAll, Forward, MessageSquare, Check,
-  Paperclip, Download
+  Paperclip, Download, ListChecks, CheckCircle, XCircle, Info
 } from 'lucide-react';
 import {
   classifyEmail, draftReply, approveDraft, fetchEmail,
-  markAsRead, fetchThread, sendReply, getAttachmentUrl
+  markAsRead, fetchThread, sendReply, getAttachmentUrl,
+  extractActionItems, updateActionItem
 } from '../api';
 import { formatFullDate, formatDate, senderColor, formatSender } from '../utils';
 import './EmailDetail.css';
@@ -360,6 +361,11 @@ function EmailDetail({ email, onUpdate, onReload }) {
     const [replyBody, setReplyBody] = useState('');
     const [sendingReply, setSendingReply] = useState(false);
     const replyRef = useRef(null);
+    // Action items state
+    const [actionItems, setActionItems] = useState([]);
+    const [loadingActions, setLoadingActions] = useState(false);
+    // Multi-draft state
+    const [selectedDraftIdx, setSelectedDraftIdx] = useState(0);
     const openReply = (action) => {
         setReplyAction(action);
         
@@ -617,6 +623,15 @@ function EmailDetail({ email, onUpdate, onReload }) {
                         )}
                     </div>
                 )}
+                {/* Explanation pills */}
+                {cls?.explanation_factors?.length > 0 && (
+                    <div className="explanation-pills">
+                        <Info size={12} className="explanation-icon" />
+                        {cls.explanation_factors.map((f, i) => (
+                            <span key={i} className="explanation-pill">{f}</span>
+                        ))}
+                    </div>
+                )}
             </div>
             {/* Actions */}
             <div className="detail-actions">
@@ -668,6 +683,19 @@ function EmailDetail({ email, onUpdate, onReload }) {
                             )}
                         </button>
                     </>
+                )}
+                {cls && (
+                    <button className="btn btn-action" onClick={async () => {
+                        setLoadingActions(true);
+                        try {
+                            const items = await extractActionItems(email.id);
+                            setActionItems(items);
+                            showToast(items.length ? `${items.length} action(s) found` : 'No action items', items.length ? 'success' : 'info');
+                        } catch (e) { showToast(e.message, 'error'); }
+                        finally { setLoadingActions(false); }
+                    }} disabled={loadingActions || !!busy}>
+                        {loadingActions ? <><RotateCcw size={14} className="spin" /> Extracting...</> : <><ListChecks size={14} /> Extract Actions</>}
+                    </button>
                 )}
                 {draft && (
                     <button className="btn btn-approve" onClick={handleApprove} disabled={!!busy} id="btn-approve">
@@ -755,6 +783,21 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                 <Sparkles size={14} /> AI Draft Reply
                                 <span className="draft-quality-badge">{draft.quality || draftQuality}</span>
                             </h3>
+                            {/* Multi-draft selector tabs */}
+                            {draft.alternatives?.length > 0 && (
+                                <div className="draft-variant-tabs">
+                                    <button className={`draft-variant-tab ${selectedDraftIdx === 0 ? 'active' : ''}`}
+                                        onClick={() => { setSelectedDraftIdx(0); setEditedDraft(null); }}>
+                                        Professional
+                                    </button>
+                                    {draft.alternatives.map((_, i) => (
+                                        <button key={i} className={`draft-variant-tab ${selectedDraftIdx === i + 1 ? 'active' : ''}`}
+                                            onClick={() => { setSelectedDraftIdx(i + 1); setEditedDraft(null); }}>
+                                            {i === 0 ? 'Concise' : 'Warm'}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         {draft.pii_redacted && (
                             <div className="draft-pii-warning">
@@ -764,7 +807,7 @@ function EmailDetail({ email, onUpdate, onReload }) {
                         )}
                         <textarea
                             className="draft-editor"
-                            value={editedDraft !== null ? editedDraft : draft.body}
+                            value={editedDraft !== null ? editedDraft : (selectedDraftIdx === 0 ? draft.body : (draft.alternatives?.[selectedDraftIdx - 1] || draft.body))}
                             onChange={(e) => setEditedDraft(e.target.value)}
                             rows={6}
                         />
@@ -774,6 +817,57 @@ function EmailDetail({ email, onUpdate, onReload }) {
                                 <Shield size={12} />
                                 PII Shield Active
                             </div>
+                        </div>
+                    </div>
+                )}
+                {/* Action Items Panel */}
+                {actionItems.length > 0 && (
+                    <div className="action-items-panel animate-slide-up">
+                        <div className="action-items-header">
+                            <h3 className="action-items-title"><ListChecks size={14} /> Action Items</h3>
+                            <span className="action-items-count">{actionItems.filter(a => a.status === 'pending').length} pending</span>
+                        </div>
+                        <div className="action-items-list">
+                            {actionItems.map(item => (
+                                <div key={item.id} className={`action-item action-item-${item.status}`}>
+                                    <div className="action-item-content">
+                                        <span className="action-item-desc">{item.description}</span>
+                                        {item.due_date && (
+                                            <span className="action-item-due">
+                                                <Clock size={11} /> {new Date(item.due_date).toLocaleDateString()}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="action-item-actions">
+                                        {item.status === 'pending' && (
+                                            <>
+                                                <button className="action-item-btn action-item-complete"
+                                                    title="Mark complete"
+                                                    onClick={async () => {
+                                                        await updateActionItem(item.id, 'completed');
+                                                        setActionItems(prev => prev.map(a => a.id === item.id ? {...a, status: 'completed'} : a));
+                                                    }}>
+                                                    <CheckCircle size={14} />
+                                                </button>
+                                                <button className="action-item-btn action-item-dismiss"
+                                                    title="Dismiss"
+                                                    onClick={async () => {
+                                                        await updateActionItem(item.id, 'dismissed');
+                                                        setActionItems(prev => prev.map(a => a.id === item.id ? {...a, status: 'dismissed'} : a));
+                                                    }}>
+                                                    <XCircle size={14} />
+                                                </button>
+                                            </>
+                                        )}
+                                        {item.status === 'completed' && (
+                                            <span className="action-item-status-badge completed"><Check size={12} /> Done</span>
+                                        )}
+                                        {item.status === 'dismissed' && (
+                                            <span className="action-item-status-badge dismissed">Dismissed</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 )}

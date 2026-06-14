@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
   CalendarDays, Plus, ChevronLeft, ChevronRight,
-  Clock, MapPin, Users, Trash2, X, Sparkles, Link2
+  Clock, MapPin, Users, Trash2, X, Sparkles, Link2, FileText
 } from 'lucide-react';
-import { fetchCalendarEvents, createCalendarEvent, deleteCalendarEvent, syncCalendarEvents } from '../api';
+import { fetchCalendarEvents, createCalendarEvent, deleteCalendarEvent, syncCalendarEvents, fetchMeetingBrief } from '../api';
 import './CalendarPage.css';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -17,6 +17,11 @@ function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newEvent, setNewEvent] = useState({ title: '', start: '', end: '', description: '', location: '', color: '#6366f1', is_all_day: false, sync_to_graph: false });
+
+  // Brief modal state
+  const [activeBriefEvent, setActiveBriefEvent] = useState(null);
+  const [briefText, setBriefText] = useState("");
+  const [loadingBrief, setLoadingBrief] = useState(false);
 
   useEffect(() => { loadEvents(); }, []);
 
@@ -69,6 +74,21 @@ function CalendarPage() {
       alert('Sync failed: ' + err.message);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handlePrepare = async (ev) => {
+    setActiveBriefEvent(ev);
+    setLoadingBrief(true);
+    setBriefText("");
+    try {
+      const data = await fetchMeetingBrief(ev.id);
+      setBriefText(data.brief || data); // handle string or JSON
+    } catch (err) {
+      console.error('Failed to fetch brief:', err);
+      setBriefText("Failed to generate meeting brief. Please try again.");
+    } finally {
+      setLoadingBrief(false);
     }
   };
 
@@ -205,9 +225,14 @@ function CalendarPage() {
                     </div>
                   )}
                 </div>
-                <button className="btn-icon cal-event-delete" onClick={() => handleDelete(ev.id)} title="Delete">
-                  <Trash2 size={14} />
-                </button>
+                <div className="cal-event-actions">
+                  <button className="btn btn-secondary cal-event-prepare" onClick={() => handlePrepare(ev)} title="Prepare Brief">
+                    <FileText size={13} /> Prepare
+                  </button>
+                  <button className="btn-icon cal-event-delete" onClick={() => handleDelete(ev.id)} title="Delete">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -271,6 +296,67 @@ function CalendarPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleCreate} disabled={!newEvent.title || !newEvent.start || (!newEvent.is_all_day && !newEvent.end)}>Create Event</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Brief Modal */}
+      {activeBriefEvent && (
+        <div className="modal-overlay" onClick={() => setActiveBriefEvent(null)}>
+          <div className="modal-content animate-slide-up" style={{maxWidth: '600px'}} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><FileText size={16} style={{display: 'inline', verticalAlign: 'text-bottom', marginRight: '6px'}} /> Meeting Brief: {activeBriefEvent.title}</h3>
+              <button className="btn-icon" onClick={() => setActiveBriefEvent(null)}><X size={18} /></button>
+            </div>
+            <div className="modal-body" style={{lineHeight: 1.6, fontSize: '14px', color: 'var(--text-secondary)'}}>
+              {loadingBrief ? (
+                <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: '16px'}}>
+                  <Sparkles size={24} className="pulse-icon" style={{color: 'var(--accent)'}} />
+                  <span>Generating AI meeting brief...</span>
+                </div>
+              ) : (
+                typeof briefText === 'object' && briefText !== null ? (
+                  <div className="brief-content">
+                    {briefText.one_line && (
+                      <p style={{fontWeight: 600, color: 'var(--text-primary)', marginBottom: '16px', fontSize: '15px'}}>{briefText.one_line}</p>
+                    )}
+                    {briefText.key_context?.length > 0 && (
+                      <div style={{marginBottom: '14px'}}>
+                        <h4 style={{fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--accent)', marginBottom: '8px'}}>Key Context</h4>
+                        <ul style={{margin: 0, paddingLeft: '18px'}}>{briefText.key_context.map((c, i) => <li key={i} style={{marginBottom: '4px'}}>{c}</li>)}</ul>
+                      </div>
+                    )}
+                    {briefText.attendee_notes?.length > 0 && (
+                      <div style={{marginBottom: '14px'}}>
+                        <h4 style={{fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--accent)', marginBottom: '8px'}}>Attendees</h4>
+                        {briefText.attendee_notes.map((a, i) => (
+                          <div key={i} style={{padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', marginBottom: '4px'}}>
+                            <strong>{a.name || a}</strong>{a.note ? ` — ${a.note}` : a.relationship ? ` (${a.relationship})` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {briefText.open_items?.length > 0 && (
+                      <div style={{marginBottom: '14px'}}>
+                        <h4 style={{fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--warning)', marginBottom: '8px'}}>Open Items</h4>
+                        <ul style={{margin: 0, paddingLeft: '18px'}}>{briefText.open_items.map((o, i) => <li key={i} style={{marginBottom: '4px'}}>{o}</li>)}</ul>
+                      </div>
+                    )}
+                    {briefText.suggested_talking_points?.length > 0 && (
+                      <div>
+                        <h4 style={{fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--success)', marginBottom: '8px'}}>Suggested Talking Points</h4>
+                        <ul style={{margin: 0, paddingLeft: '18px'}}>{briefText.suggested_talking_points.map((p, i) => <li key={i} style={{marginBottom: '4px'}}>{p}</li>)}</ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{whiteSpace: 'pre-wrap'}}>{String(briefText || 'No brief available.')}</p>
+                )
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setActiveBriefEvent(null)}>Done</button>
             </div>
           </div>
         </div>
