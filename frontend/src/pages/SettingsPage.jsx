@@ -281,11 +281,11 @@ function AITab({ showToast }) {
   };
 
   const handleAddPref = async () => {
-    if (!newPref.pref_key.trim() || !newPref.pref_value.trim()) return;
+    if (!newPref.pref_value.trim()) return;
     try {
-      await createPreference(newPref.pref_type, newPref.pref_key, newPref.pref_value);
-      const updated = await fetchPreferences();
-      setPreferences(updated);
+      const autoKey = newPref.pref_value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'pref';
+      await createPreference(newPref.pref_type, autoKey, newPref.pref_value);
+      await loadPrefs();
       setNewPref({ pref_type: 'general', pref_key: '', pref_value: '' });
       setShowAddPref(false);
       showToast('Preference saved.');
@@ -380,8 +380,7 @@ function AITab({ showToast }) {
               <option value="drafting_instruction">Drafting</option>
               <option value="vip">VIP</option>
             </select>
-            <input className="input" style={{flex:1,minWidth:120}} placeholder="Key" value={newPref.pref_key} onChange={e => setNewPref(p => ({...p, pref_key: e.target.value}))} />
-            <input className="input" style={{flex:2,minWidth:160}} placeholder="Value" value={newPref.pref_value} onChange={e => setNewPref(p => ({...p, pref_value: e.target.value}))} />
+            <input className="input" style={{flex:1,minWidth:160}} placeholder="Preference Value" value={newPref.pref_value} onChange={e => setNewPref(p => ({...p, pref_value: e.target.value}))} />
             <button className="btn btn-primary" style={{fontSize:12}} onClick={handleAddPref}><Check size={12} /> Save</button>
           </div>
         )}

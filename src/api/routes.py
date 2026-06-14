@@ -142,7 +142,7 @@ def _sync_imap_mailbox(account: AccountConfig, imap_mailbox: str, inbox: str) ->
             
         return emails
     except Exception as exc:
-        log.warning(f"Failed to sync mailbox {imap_mailbox}", extra={"error": str(exc), "account": account.email})
+        log.exception(f"Failed to sync mailbox {imap_mailbox}", extra={"error": str(exc), "account": account.email})
         return []
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -368,7 +368,8 @@ def _load_account_email_source(account: AccountConfig, inbox: str) -> list[Email
     emails.extend(sent_emails)
     
     # Start IDLE connection to wait for push notifications
-    _ensure_idle_connection(account, inbox)
+    # DISABLED: Causing Gmail rate limiting / concurrent connection issues. Frontend polls every 15s anyway.
+    # _ensure_idle_connection(account, inbox)
     # Ensure sent emails are marked as is_sent
     from_addr = account.email or cfg.imap_user
     if from_addr:
