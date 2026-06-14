@@ -756,7 +756,23 @@ async def get_email_thread(email_id: str) -> list[dict[str, Any]]:
                 thread_emails[e.id] = e
     thread = [e.model_dump(mode="json") for e in thread_emails.values()]
     thread.sort(key=lambda e: e.get("timestamp", ""))
-    return thread
+
+    # Deduplicate identical emails (e.g., sent copy from X vs received copy in Y)
+    from datetime import datetime
+    deduped = []
+    for e in thread:
+        is_dup = False
+        e_time = datetime.fromisoformat(e["timestamp"].replace('Z', '+00:00'))
+        for d in deduped:
+            if d["sender"] == e["sender"] and d["subject"] == e["subject"]:
+                d_time = datetime.fromisoformat(d["timestamp"].replace('Z', '+00:00'))
+                if abs((e_time - d_time).total_seconds()) < 120:
+                    is_dup = True
+                    break
+        if not is_dup:
+            deduped.append(e)
+
+    return deduped
 @router.post("/emails/{email_id}/classify")
 async def classify_email(
     email_id: str,

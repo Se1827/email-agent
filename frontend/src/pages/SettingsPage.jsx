@@ -341,7 +341,7 @@ function AITab({ showToast }) {
       <div className="s-section">
         <div className="s-field-label">Email Source</div>
         <div className="radio-group">
-          {[['mock', '🧪 Mock', 'Use built-in seed emails. Good for testing.'], ['imap', '📥 IMAP', 'Fetch real emails from your connected accounts.']].map(([val, label, desc]) => (
+          {[['mock', 'Mock', 'Use built-in seed emails. Good for testing.'], ['imap', 'IMAP', 'Fetch real emails from your connected accounts.']].map(([val, label, desc]) => (
             <label key={val} className={`radio-card ${s.email_source === val ? 'active' : ''}`}>
               <input type="radio" name="email_source" value={val} checked={s.email_source === val} onChange={() => setS(v => ({ ...v, email_source: val }))} />
               <div><strong>{label}</strong><span>{desc}</span></div>
@@ -353,7 +353,7 @@ function AITab({ showToast }) {
       <div className="s-section">
         <div className="s-field-label">Default Draft Quality</div>
         <div className="radio-group">
-          {[['quick', '⚡ Quick', '2–3 sentences. temp=0.3, 300 tokens.'], ['balanced', '⚖️ Balanced', 'Helpful reply. temp=0.4, 600 tokens.'], ['thorough', '📝 Thorough', 'Comprehensive. temp=0.5, 1024 tokens.']].map(([val, label, desc]) => (
+          {[['quick', '⚡ Quick', '2–3 sentences. temp=0.3, 300 tokens.'], ['balanced', 'Balanced', 'Helpful reply. temp=0.4, 600 tokens.'], ['thorough', 'Thorough', 'Comprehensive. temp=0.5, 1024 tokens.']].map(([val, label, desc]) => (
             <label key={val} className={`radio-card ${s.default_draft_quality === val ? 'active' : ''}`}>
               <input type="radio" name="draft_quality" value={val} checked={s.default_draft_quality === val} onChange={() => setS(v => ({ ...v, default_draft_quality: val }))} />
               <div><strong>{label}</strong><span>{desc}</span></div>

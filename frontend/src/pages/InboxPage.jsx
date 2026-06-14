@@ -197,15 +197,7 @@ function InboxPage() {
   });
 
   // Sort
-  const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };
   const sorted = [...filtered].sort((a, b) => {
-    const ca = a.classification;
-    const cb = b.classification;
-    if (ca && !cb) return -1;
-    if (!ca && cb) return 1;
-    if (ca && cb) {
-      return (priorityOrder[ca.priority] ?? 9) - (priorityOrder[cb.priority] ?? 9);
-    }
     return new Date(b.timestamp) - new Date(a.timestamp);
   });
 
