@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AppNav from './components/AppNav';
 import Dashboard from './pages/Dashboard';
@@ -8,6 +9,27 @@ import OutlookPage from './pages/OutlookPage';
 import './App.css';
 
 function App() {
+  const [theme, setTheme] = useState(localStorage.getItem('app-theme') || 'default');
+
+  useEffect(() => {
+    // Apply theme class to body
+    let themeClass = '';
+    if (theme === 'crimson') themeClass = 'theme-crimson';
+    else if (theme === 'forest') themeClass = 'theme-forest';
+
+    document.body.className = themeClass;
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
+
+  // Listen for theme changes from other components (Settings)
+  useEffect(() => {
+    const handleThemeChange = () => {
+      setTheme(localStorage.getItem('app-theme') || 'default');
+    };
+    window.addEventListener('theme-changed', handleThemeChange);
+    return () => window.removeEventListener('theme-changed', handleThemeChange);
+  }, []);
+
   return (
     <div className="app-shell">
       <AppNav />
@@ -24,5 +46,6 @@ function App() {
     </div>
   );
 }
+
 
 export default App;
