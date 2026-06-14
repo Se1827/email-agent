@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "email-agent": {
+      "command": "python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": ".",
+      "env": {
+        "EMAIL_AGENT_API": "http://127.0.0.1:8000",
+        "EMAIL_AGENT_TOKEN": ""
+      }
+    }
+  }
+}

@@ -2271,3 +2271,39 @@ async def meeting_brief(event_id: str) -> dict[str, Any]:
         start_time=event.start.strftime("%H:%M") if event.start else None,
     )
 
+
+
+# -- MCP-support endpoints ---------------------------------------------------
+
+
+class _AlertRequest(BaseModel):
+    title: str
+    message: str
+    severity: str = "info"
+
+
+@router.post("/notifications/alert")
+async def mcp_send_alert(req: _AlertRequest) -> dict[str, Any]:
+    """Inject an alert notification from an MCP tool call."""
+    notif = Notification(
+        id=f"mcp-alert-{uuid4().hex[:8]}",
+        type="ai_insight",
+        title=req.title[:80],
+        message=req.message,
+        severity=req.severity if req.severity in {"info", "warning", "critical"} else "info",
+        timestamp=datetime.now(timezone.utc),
+    )
+    _notifications.insert(0, notif)
+    if len(_notifications) > 50:
+        _notifications[:] = _notifications[:50]
+    _log_activity("mcp_alert", req.title, related_id=notif.id)
+    return {"id": notif.id, "status": "created"}
+
+
+@router.post("/emails/{email_id}/read")
+async def mcp_mark_email_read(email_id: str) -> dict[str, Any]:
+    """Mark an email as read (called by the MCP mark_email_read tool)."""
+    email = _get_email(email_id)
+    email.is_read = True
+    _persist_email_state(email, source="mcp")
+    return {"email_id": email_id, "is_read": True}
