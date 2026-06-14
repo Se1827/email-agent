@@ -1823,7 +1823,7 @@ async def extract_email_actions(email_id: str) -> list[dict[str, Any]]:
     """Extract action items from an email using AI."""
     email = _get_email(email_id)
     from src.services.actions import extract_action_items
-    items = await extract_action_items(
+    items = await extract_email_actions(
         email_id=email.id,
         sender=email.sender,
         subject=email.subject,
@@ -1961,3 +1961,255 @@ async def meeting_brief(event_id: str) -> dict[str, Any]:
         attendees=event.attendees,
         start_time=event.start.strftime("%H:%M") if event.start else None,
     )
+
+# ── Settings Endpoints (read/write .env from UI) ─────────────────────────────
+
+class AppSettings(BaseModel):
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    email_source: str = "mock"
+    pii_mode: str = "strict_presidio"
+    default_draft_quality: str = "balanced"
+    storage_enabled: bool = False
+    otel_enabled: bool = False
+    otel_service_name: str = "email-agent"
+    otel_exporter_otlp_endpoint: str = ""
+
+
+@router.get("/settings")
+async def get_app_settings() -> dict:
+    """Return current application settings (from .env). API key is masked."""
+    from dotenv import dotenv_values
+    from pathlib import Path as _Path
+    env_path = _Path(__file__).resolve().parent.parent.parent / ".env"
+    vals = dotenv_values(env_path) if env_path.exists() else {}
+    key = vals.get("GROQ_API_KEY", "")
+    # Mask all but first 6 chars
+    masked_key = key[:6] + "•" * max(0, len(key) - 6) if len(key) > 6 else ("•" * len(key))
+    return {
+        "groq_api_key": masked_key,
+        "groq_api_key_set": bool(key and key != "gsk_your-key-here"),
+        "groq_model": vals.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        "email_source": vals.get("EMAIL_SOURCE", "mock"),
+        "pii_mode": vals.get("PII_MODE", "strict_presidio"),
+        "default_draft_quality": vals.get("DEFAULT_DRAFT_QUALITY", "balanced"),
+        "storage_enabled": vals.get("STORAGE_ENABLED", "false").lower() == "true",
+        "database_url": vals.get("DATABASE_URL", ""),
+        "otel_enabled": vals.get("OTEL_ENABLED", "false").lower() == "true",
+        "otel_service_name": vals.get("OTEL_SERVICE_NAME", "email-agent"),
+        "otel_exporter_otlp_endpoint": vals.get("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+    }
+
+
+class UpdateSettingsRequest(BaseModel):
+    groq_api_key: str | None = None        # None = don't change
+    groq_model: str | None = None
+    email_source: str | None = None
+    pii_mode: str | None = None
+    default_draft_quality: str | None = None
+    storage_enabled: bool | None = None
+    otel_enabled: bool | None = None
+    otel_service_name: str | None = None
+    otel_exporter_otlp_endpoint: str | None = None
+
+
+@router.put("/settings")
+async def update_app_settings(req: UpdateSettingsRequest) -> dict:
+    """Write changed settings to .env and hot-reload where possible."""
+    from dotenv import set_key
+    from pathlib import Path as _Path
+    from src.config import reset_settings
+    env_path = _Path(__file__).resolve().parent.parent.parent / ".env"
+    if not env_path.exists():
+        env_path.touch()
+
+    changed = []
+
+    def _set(key: str, val: str):
+        set_key(str(env_path), key, val)
+        changed.append(key)
+
+    if req.groq_api_key is not None and "•" not in req.groq_api_key:
+        _set("GROQ_API_KEY", req.groq_api_key)
+    if req.groq_model is not None:
+        _set("GROQ_MODEL", req.groq_model)
+    if req.email_source is not None:
+        _set("EMAIL_SOURCE", req.email_source)
+    if req.pii_mode is not None:
+        _set("PII_MODE", req.pii_mode)
+    if req.default_draft_quality is not None:
+        _set("DEFAULT_DRAFT_QUALITY", req.default_draft_quality)
+    if req.storage_enabled is not None:
+        _set("STORAGE_ENABLED", "true" if req.storage_enabled else "false")
+    if req.otel_enabled is not None:
+        _set("OTEL_ENABLED", "true" if req.otel_enabled else "false")
+    if req.otel_service_name is not None:
+        _set("OTEL_SERVICE_NAME", req.otel_service_name)
+    if req.otel_exporter_otlp_endpoint is not None:
+        _set("OTEL_EXPORTER_OTLP_ENDPOINT", req.otel_exporter_otlp_endpoint)
+
+    # Invalidate the singleton so next get_settings() re-reads from .env
+    reset_settings()
+
+    return {"status": "ok", "changed": changed}
+
+
+# ── Storage / Docker Setup Endpoints ─────────────────────────────────────────
+
+def _run_docker(*args: str, timeout: int = 15) -> tuple[int, str, str]:
+    """Run a docker command. Returns (returncode, stdout, stderr)."""
+    import subprocess as _sp
+    result = _sp.run(
+        ["docker", *args],
+        capture_output=True, text=True, timeout=timeout,
+    )
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+@router.get("/storage/status")
+async def storage_setup_status() -> dict:
+    """
+    Check Docker daemon, email-agent-postgres container state, and DB connectivity.
+    Returns a structured status object the Settings UI can render.
+    """
+    import subprocess as _sp
+
+    # 1. Is Docker daemon running?
+    try:
+        rc, _, _ = _run_docker("info", timeout=5)
+        docker_running = rc == 0
+    except Exception:
+        docker_running = False
+
+    if not docker_running:
+        return {
+            "docker_available": False,
+            "docker_running": False,
+            "container_exists": False,
+            "container_running": False,
+            "db_reachable": False,
+            "storage_enabled": get_settings().storage_enabled,
+        }
+
+    # 2. Does the container exist?
+    rc, out, _ = _run_docker(
+        "inspect", "--format", "{{.State.Status}}", "email-agent-postgres"
+    )
+    container_exists = rc == 0
+    container_running = container_exists and out.strip() == "running"
+
+    # 3. Can we reach the DB?
+    db_reachable = False
+    if container_running and get_settings().storage_enabled:
+        try:
+            import psycopg
+            with psycopg.connect(get_settings().database_url, connect_timeout=2) as conn:
+                db_reachable = True
+        except Exception:
+            pass
+
+    return {
+        "docker_available": True,
+        "docker_running": True,
+        "container_exists": container_exists,
+        "container_running": container_running,
+        "db_reachable": db_reachable,
+        "storage_enabled": get_settings().storage_enabled,
+    }
+
+
+class StorageSetupRequest(BaseModel):
+    database_url: str = "postgresql://email_agent:email_agent@localhost:5432/email_agent"
+
+
+@router.post("/storage/setup")
+async def setup_storage(req: StorageSetupRequest) -> dict:
+    """
+    One-click database setup:
+    1. Start container if it exists but is stopped.
+    2. Create container if it doesn't exist.
+    3. Generate encryption key if none is set.
+    4. Write DATABASE_URL, STORAGE_ENCRYPTION_KEY, STORAGE_ENABLED=true to .env.
+    """
+    from dotenv import set_key, dotenv_values
+    from pathlib import Path as _Path
+    from cryptography.fernet import Fernet
+    from src.config import reset_settings
+
+    env_path = _Path(__file__).resolve().parent.parent.parent / ".env"
+    if not env_path.exists():
+        env_path.touch()
+
+    status_log = []
+
+    # Step 1 — check/start container
+    rc, out, _ = _run_docker(
+        "inspect", "--format", "{{.State.Status}}", "email-agent-postgres"
+    )
+    if rc == 0:
+        # Container exists
+        if out.strip() != "running":
+            rc2, _, err = _run_docker("start", "email-agent-postgres")
+            if rc2 == 0:
+                status_log.append("Container started.")
+                # Give it a second to boot
+                import time as _t
+                _t.sleep(2)
+            else:
+                raise HTTPException(502, f"Failed to start container: {err}")
+        else:
+            status_log.append("Container already running.")
+    else:
+        # Container doesn't exist — create it
+        import time as _t
+        rc2, _, err = _run_docker(
+            "run", "--name", "email-agent-postgres",
+            "-e", "POSTGRES_USER=email_agent",
+            "-e", "POSTGRES_PASSWORD=email_agent",
+            "-e", "POSTGRES_DB=email_agent",
+            "-p", "5432:5432",
+            "-v", "email_agent_pgdata:/var/lib/postgresql/data",
+            "-d", "pgvector/pgvector:pg16",
+            timeout=60,
+        )
+        if rc2 == 0:
+            status_log.append("Container created and started.")
+            _t.sleep(5)  # let postgres init
+        else:
+            # Docker might not be running — give a helpful message
+            raise HTTPException(
+                502,
+                f"Could not create container. Is Docker running? Error: {err}",
+            )
+
+    # Step 2 — encryption key
+    vals = dotenv_values(env_path)
+    existing_key = vals.get("STORAGE_ENCRYPTION_KEY", "").strip()
+    if not existing_key:
+        new_key = Fernet.generate_key().decode()
+        set_key(str(env_path), "STORAGE_ENCRYPTION_KEY", new_key)
+        status_log.append("Encryption key generated.")
+    else:
+        status_log.append("Encryption key already set.")
+
+    # Step 3 — write DB settings
+    set_key(str(env_path), "DATABASE_URL", req.database_url)
+    set_key(str(env_path), "STORAGE_ENABLED", "true")
+    status_log.append("DATABASE_URL and STORAGE_ENABLED written to .env.")
+
+    # Hot-reload settings so the status check works immediately
+    reset_settings()
+    
+    # Initialize the schema immediately so it's ready to use
+    from src.storage import init_storage
+    try:
+        init_storage()
+        status_log.append("Database schema initialized.")
+    except Exception as e:
+        status_log.append(f"Warning: Schema init failed ({e}). It will retry on restart.")
+
+    return {
+        "status": "ok",
+        "log": status_log,
+        "note": "Database is ready! If still unreachable, refresh the page.",
+    }

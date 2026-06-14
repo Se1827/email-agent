@@ -33,6 +33,34 @@ def main() -> None:
 
     api_port = os.getenv("API_PORT", "8000")
 
+    # ── Auto-start PostgreSQL container if storage is enabled ────────────────
+    if os.getenv("STORAGE_ENABLED", "false").lower() == "true":
+        print("Storage is enabled — attempting to start email-agent-postgres...")
+        try:
+            result = subprocess.run(
+                ["docker", "start", "email-agent-postgres"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                print("  ✓ email-agent-postgres started.")
+            else:
+                # Container might already be running — check
+                check = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.State.Status}}", "email-agent-postgres"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if check.stdout.strip() == "running":
+                    print("  ✓ email-agent-postgres already running.")
+                else:
+                    print(f"  ⚠ Could not start container: {result.stderr.strip()}")
+                    print("    Run 'sudo dockerd &' first if Docker daemon is not running.")
+        except FileNotFoundError:
+            print("  ⚠ Docker not found in PATH. Skipping container auto-start.")
+        except subprocess.TimeoutExpired:
+            print("  ⚠ Docker start timed out. Is the Docker daemon running?")
+        except Exception as e:
+            print(f"  ⚠ Unexpected error starting Docker container: {e}")
+
     # Start the FastAPI server.
     api_cmd = [
         sys.executable, "-m", "uvicorn",

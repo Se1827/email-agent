@@ -118,6 +118,18 @@ def get_settings() -> Settings:
     return _settings
 
 
+def reset_settings() -> None:
+    """Invalidate the cached Settings singleton.
+
+    Call this after writing new values to .env so that the next
+    get_settings() call re-reads from the environment.
+    """
+    global _settings
+    _settings = None
+    # Re-load .env so os.getenv() picks up the new values
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
+
+
 def update_ai_mode(mode: str) -> str:
     """Update the AI mode at runtime and return the normalized value.
 

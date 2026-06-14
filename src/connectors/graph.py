@@ -21,7 +21,7 @@ IS_MOCK       = os.getenv("GRAPH_MOCK", "true").lower() == "true"
 TENANT_ID     = os.getenv("AZURE_TENANT_ID",     "mock-tenant")
 CLIENT_ID     = os.getenv("AZURE_CLIENT_ID",     "mock-client")
 CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET", "mock-secret")
-USER_EMAIL    = os.getenv("GRAPH_USER_EMAIL",    "23053333@kiit.ac.in")
+USER_EMAIL    = os.getenv("GRAPH_USER_EMAIL",    "you@example.com")
 GRAPH_BASE    = "https://graph.microsoft.com/v1.0"
 TOKEN_CACHE   = Path(__file__).parent.parent.parent / ".graph_token_cache.json"
 
@@ -51,7 +51,7 @@ _MOCK_MESSAGES = [
             "contentType": "html",
             "content": "<p>Hi,</p><p>The judging panel needs the final prototype link and a 2-minute video by <b>5:00 PM today</b>.</p>",
         },
-        "from": {"emailAddress": {"name": "Rahul Sharma", "address": "rahul.sharma@kiit.ac.in"}},
+        "from": {"emailAddress": {"name": "Rahul Sharma", "address": "rahul@example.com"}},
         "toRecipients": [{"emailAddress": {"name": "You", "address": USER_EMAIL}}],
         "receivedDateTime": (_now - timedelta(hours=1)).isoformat() + "Z",
         "isRead": False,
@@ -68,7 +68,7 @@ _MOCK_MESSAGES = [
             "contentType": "html",
             "content": "<p>Hi Team,</p><p>Please review the attached Q3 deck and share your inputs by <b>Friday EOW</b>.</p>",
         },
-        "from": {"emailAddress": {"name": "Priya Menon", "address": "priya.menon@kiit.ac.in"}},
+        "from": {"emailAddress": {"name": "Priya Menon", "address": "priya@example.com"}},
         "toRecipients": [{"emailAddress": {"name": "You", "address": USER_EMAIL}}],
         "receivedDateTime": (_now - timedelta(hours=3)).isoformat() + "Z",
         "isRead": False,
@@ -127,8 +127,8 @@ _MOCK_ATTACHMENTS = {
 
 
 _MOCK_GROUPS = [
-    {"id": "group-001", "displayName": "Engineering", "mail": "eng@kiit.ac.in"},
-    {"id": "group-002", "displayName": "HR", "mail": "hr@kiit.ac.in"},
+    {"id": "group-001", "displayName": "Engineering", "mail": "eng@example.com"},
+    {"id": "group-002", "displayName": "HR", "mail": "hr@example.com"},
 ]
 
 _MOCK_DRIVE_ITEMS = [
